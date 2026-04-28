@@ -1,0 +1,15 @@
+node_modules/
+*.log
+poc/logs/
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+.idea/
+.vscode/
+.claude/settings.local.json
