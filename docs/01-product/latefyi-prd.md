@@ -1534,9 +1534,18 @@ Suggested phasing for Claude during development. Phases are ordered so each is i
 - Goal: users who want push notifications can opt in and get them; email users completely unaffected
 
 **Phase 7 — hardening**
-- Edge cases, error handling, log retention pruning, disagreement logging
-- 30-day unattended-operation soak test
-- Goal: runs unattended for 30+ days, recovers from HAFAS outages, never loses a tracking request
+- **Outbound deliverability** (so replies don't land in junk once we go beyond the operator's own inbox):
+  - SPF: append VPS IP `155.94.144.191` to the `late.fyi` SPF TXT record
+  - DKIM: configure opendkim signing-table for `noreply@late.fyi` (opendkim already running on the VPS for addypin — just add a key + signing-table entry)
+  - PTR / reverse DNS for the sending IP via the VPS provider
+- **Disambiguation reply completion flow** — server.js currently silently drops replies that aren't fresh tracking requests; wire the digit-or-fuzzy-name reply back to the pending station-resolution
+- **Abuse limits** in preparation for broadening allowlist beyond the operator:
+  - Per-sender rate limits (fresh-request count per hour/day)
+  - Max active trains per sender
+  - First-time-sender confirmation handshake
+- **Operations**: log retention pruning (`logs/push.jsonl`, error logs), HAFAS-disagreement logging when ÖBB and PKP both succeed but disagree, edge-case error handling
+- **30-day unattended-operation soak test**
+- Goal: runs unattended for 30+ days, recovers from HAFAS outages, never loses a tracking request, replies reliably reach Gmail/Outlook/Apple inboxes, safe to broaden the allowlist
 
 Each phase is independently demoable and shippable. Email-default architecture means Phases 1–5 deliver complete value; Phase 6 (ntfy) is purely additive.
 
