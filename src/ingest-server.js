@@ -104,6 +104,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   const stateDir = process.env.STATE_DIR || join(root, 'state');
   const port     = parseInt(process.env.INGEST_PORT || '8787', 10);
+  // Default to localhost-only — the reverse proxy always lives on the same
+  // host. Set INGEST_HOST=0.0.0.0 to expose directly (not recommended).
+  const host     = process.env.INGEST_HOST || '127.0.0.1';
   const ingestToken = process.env.INGEST_TOKEN;
   if (!ingestToken) {
     console.error('FATAL: INGEST_TOKEN env var required');
@@ -150,5 +153,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     stateDir, primaryClient: profiles.oebb, fallbackClient: profiles.pkp,
     aliases, allowlist, transport, ingestToken,
   });
-  server.listen(port, () => console.log(`[ingest] listening on :${port}`));
+  server.listen(port, host, () => console.log(`[ingest] listening on ${host}:${port}`));
 }
