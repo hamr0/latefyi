@@ -10,6 +10,11 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Docs: deployment runbook (2026-04-29)
+- PRD §21 expanded into a complete VPS-existing-runbook: where each component lives, systemd unit files for `latefyi-ingest` + `latefyi-poller`, Caddy reverse-proxy block, env-file template, DNS A record + cron + Worker secrets — top-to-bottom-copy-pasteable.
+- README architecture diagram redrawn to show the Cloudflare ↔ VPS split clearly. Added "Deploy to your own VPS" 8-step summary linking out to PRD §21.
+- Why two pieces explicitly addressed: Workers can't run the polling loop or hold state. Could move to Workers + KV + DOs + Cron Triggers but it'd need a paid plan and rewrite Phases 2–3. Bare-suite VPS path is the deliberate choice (PRD §22 decisions 5, 13).
+
 ### Implementation: 0.5.0 — Phase 5 (2026-04-29)
 - `worker/index.js` — Cloudflare Email Worker. Allowlist enforcement at the edge (silent drop, no backscatter), then forwards a JSON payload (subject + body + headers + msgid) to the VPS ingest server with a Bearer token. Stateless. ~50 LOC.
 - `worker/wrangler.toml` — minimal Worker config; `account_id` to fill in at deploy.

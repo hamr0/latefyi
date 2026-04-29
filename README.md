@@ -59,19 +59,36 @@ System is end-to-end usable after Phase 4. ntfy is purely additive in Phase 6.
 
 ## Architecture
 
+Two pieces, one in each box. Cloudflare handles inbound email receipt at the edge; a small Node process on a VPS (or any always-on machine) does the actual work.
+
 ```
-   ┌──────────────────────┐         ┌─────────────────────┐
-   │ Cloudflare Email     │ HTTPS   │ Node.js process     │
-   │ Worker (edge ingest) │ ──────▶ │ on VPS / home server│
-   │ - allowlist check    │         │ - parse / resolve   │
-   │ - JSON to /ingest    │         │ - schedule          │
-   └──────────────────────┘         │ - poll daemon       │
-                                    │ - email + ntfy push │
-                                    └─────────────────────┘
-                                             ▲
-                                       cron: wake.sh
-                                       moves pending → active
+                       Cloudflare account                                 Your VPS
+   ┌────────────────────────────────────────┐    ┌──────────────────────────────────────────┐
+   │  late.fyi MX → Email Routing           │    │                                          │
+   │   ↓                                    │    │     systemd: latefyi-ingest (port 8787)  │
+   │  Catch-all rule → Worker               │    │       POST /ingest  (Bearer token)       │
+   │   ↓                                    │    │       parse → resolve → schedule         │
+   │  worker/index.js (~50 LOC, stateless)  │    │       reply via SMTP transport ──────────┼──▶ SMTP relay
+   │   ├─ allowlist check                   │    │                                          │       (Resend / Postmark / SES)
+   │   └─ POST {payload} ───────────────────┼────▶                                          │
+   │      to ingest.late.fyi (A record)     │    │     systemd: latefyi-poller              │
+   │                                        │    │       reads state/active/*.json          │
+   │  late.fyi DNS:                         │    │       polls hafas-client (oebb / pkp)    │
+   │   - MX (auto by Email Routing)         │    │       diff → events → push.jsonl + send  │
+   │   - A: ingest.late.fyi → VPS IP        │    │                                          │
+   └────────────────────────────────────────┘    │     cron (every minute):                 │
+                                                 │       scripts/wake.sh                    │
+                                                 │       moves pending → active at T-30     │
+                                                 │                                          │
+                                                 │     state/ on disk:                      │
+                                                 │       users/, pending/, active/,         │
+                                                 │       done/, errors/                     │
+                                                 └──────────────────────────────────────────┘
 ```
+
+The Worker can't run the polling loop or hold state — Cloudflare Workers are stateless and CPU-time-limited per request. Its job is just to filter at the edge and forward. Could the whole system run on Workers + KV + Durable Objects + Cron Triggers? Yes, but it would require a $5/mo paid plan, lose file-based simplicity, and rewrite Phases 2–3. PRD §22 decisions 5 and 13 chose the bare-suite VPS path on purpose.
+
+**What "always on" means in practice:** a tiny VPS (Hetzner CX11 €4/mo, Oracle free tier, Fly.io shared-cpu, etc.), a home server, or a Raspberry Pi all qualify. ~50 MB resident, trivial CPU.
 
 State lives in plain files under `state/`:
 
@@ -114,7 +131,22 @@ npm install
 npm test
 ```
 
-Currently: **83/83 pass** in ~300 ms. No network required (HAFAS interactions are dependency-injected fakes).
+Currently: **196/196 pass** in ~600 ms. No network required (HAFAS interactions are dependency-injected fakes; SMTP is stubbed; HTTP ingest tests spin up real servers on random ports).
+
+## Deploy to your own VPS
+
+Full runbook lives in [PRD §21](docs/01-product/latefyi-prd.md#21-deployment) and [worker/README.md](worker/README.md). Short version:
+
+1. **Domain** — point nameservers at Cloudflare; enable Email Routing (free).
+2. **VPS** — clone repo, `npm install --omit=dev`, write `/etc/latefyi.env` with `INGEST_TOKEN`, `ALLOWED_SENDERS`, SMTP relay creds.
+3. **Two systemd units** — `latefyi-ingest` (HTTP server) and `latefyi-poller` (polling daemon). Both restart-on-failure.
+4. **Cron** — `* * * * * /opt/latefyi/scripts/wake.sh` for T-30 activation.
+5. **Reverse proxy** — Caddy or nginx terminating TLS on `ingest.late.fyi`. Caddyfile is one block.
+6. **DNS** — A record `ingest.late.fyi` → VPS IP, in the same Cloudflare dashboard.
+7. **Worker** — `wrangler secret put` the three values (allowlist, ingest URL, ingest token), then `wrangler deploy`. Wire Email Routing → Worker.
+8. **Test** — email `Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof` to `ICE145@late.fyi` from an allowlisted address.
+
+No Docker required. No DB. ~50 MB resident on the VPS.
 
 ---
 

@@ -1263,31 +1263,121 @@ Not applicable — single-tenant scale. At most ~10 concurrent active requests.
 
 ## 21. Deployment
 
+### Where each piece runs
+
+| Component | Hosted on | Why |
+|---|---|---|
+| Inbound email receipt + edge allowlist | Cloudflare Email Worker (free) | Email Routing only delivers via Workers; CPU-cheap allowlist filtering at the edge |
+| HTTP `/ingest` endpoint | Your VPS, port 8787 (behind reverse proxy on 443) | Persistent process, file-system state |
+| Polling daemon (`poll-runner.js`) | Your VPS | Long-lived loop; ditto state |
+| Cron `wake.sh` (every minute) | Your VPS | Activates due `pending/` records |
+| Outbound mail | Your VPS → SMTP relay (Resend / Postmark / SES / etc.) | CF Email send-binding only works inside Workers and is destination-verified-only on free; SMTP relay is the open path |
+| DNS for `late.fyi` and `ingest.late.fyi` | Cloudflare | Same dashboard handles MX + A record |
+
 ### Minimum infra
 
 - 1× Cloudflare account (free)
-- 1× domain (~$10/yr)
-- 1× small VPS (1 vCPU, 512MB RAM, 10GB disk — e.g., Hetzner CX11 ~€4/mo) OR a home server / Raspberry Pi
-- Optional: 1× SMTP relay account if not using Cloudflare email send (free tier on most providers)
+- 1× domain (`late.fyi`, $11–13/yr at Cloudflare Registrar)
+- 1× small VPS (1 vCPU, 512 MB RAM, 10 GB disk) OR Raspberry Pi at home — anything always-on with public IP and outbound 587/465
+- 1× SMTP relay account (Resend free tier = 3,000/mo, Postmark, AWS SES, etc.). Most VPS providers block port 25, so a relay is the practical path.
 
-### Deploy steps
+### Deploy steps (existing VPS path)
 
-1. `git clone <repo> /opt/latefyi`
-2. `cd /opt/latefyi && npm install`
-3. Edit `config/config.json` with your sender email(s) and SMTP creds
-4. Set env vars (`SMTP_PASS`, `LATEFYI_INGEST_TOKEN`)
-5. Open ingest port: `sudo ufw allow 8787/tcp` (or put behind reverse proxy with TLS)
-6. Add cron: `* * * * * /opt/latefyi/scripts/wake.sh`
-7. Deploy Worker: `cd worker && wrangler deploy`
-8. Set Worker secrets (see section 14)
-9. Configure Cloudflare Email Routing
-10. Run `./scripts/setup-ntfy.sh <your-email>`
-11. Subscribe phone to printed ntfy topic
-12. Send test email, verify end-to-end
+```sh
+# 1. On VPS — get the code
+sudo mkdir -p /opt/latefyi && sudo chown $USER /opt/latefyi
+git clone https://github.com/hamr0/latefyi /opt/latefyi
+cd /opt/latefyi
+npm install --omit=dev
 
-### Reverse proxy (recommended)
+# 2. Generate the shared ingest token (32-byte hex)
+INGEST_TOKEN=$(openssl rand -hex 32)
+echo "$INGEST_TOKEN"   # save — you'll need it on both ends
 
-Put the ingest endpoint behind nginx/caddy with TLS. Caddy example:
+# 3. Create env file (read by systemd unit)
+sudo tee /etc/latefyi.env > /dev/null <<EOF
+STATE_DIR=/opt/latefyi/state
+LOG_DIR=/opt/latefyi/logs
+INGEST_PORT=8787
+INGEST_TOKEN=$INGEST_TOKEN
+ALLOWED_SENDERS=you@example.com
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_USER=resend
+SMTP_PASS=re_xxxxxxxxxxxx
+SMTP_FROM=noreply@late.fyi
+EOF
+sudo chmod 600 /etc/latefyi.env
+
+# 4. systemd units — see "systemd" section below
+
+# 5. Cron for wake.sh
+( crontab -l 2>/dev/null; echo "* * * * * /opt/latefyi/scripts/wake.sh >> /opt/latefyi/logs/wake.log 2>&1" ) | crontab -
+
+# 6. Reverse proxy — see "Reverse proxy" section below
+#    sudo systemctl reload caddy   (or nginx)
+
+# 7. DNS — in Cloudflare dashboard add A record:
+#    ingest.late.fyi → <vps public IP>, proxy ON or OFF (off is fine, simpler)
+
+# 8. Worker — see worker/README.md for the four wrangler secret commands and `wrangler deploy`
+
+# 9. Test: send From: your-allowlisted-address to ICE145@late.fyi with
+#    Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof
+#    Confirmation reply within seconds.
+```
+
+### systemd units
+
+`/etc/systemd/system/latefyi-ingest.service`:
+
+```ini
+[Unit]
+Description=latefyi inbound email ingest server
+After=network.target
+
+[Service]
+Type=simple
+User=latefyi
+WorkingDirectory=/opt/latefyi
+EnvironmentFile=/etc/latefyi.env
+ExecStart=/usr/bin/node src/ingest-server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/latefyi-poller.service`:
+
+```ini
+[Unit]
+Description=latefyi poll-runner daemon
+After=network.target
+
+[Service]
+Type=simple
+User=latefyi
+WorkingDirectory=/opt/latefyi
+EnvironmentFile=/etc/latefyi.env
+ExecStart=/usr/bin/node src/poll-runner.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```sh
+sudo useradd --system --home /opt/latefyi --shell /usr/sbin/nologin latefyi
+sudo chown -R latefyi:latefyi /opt/latefyi
+sudo systemctl daemon-reload
+sudo systemctl enable --now latefyi-ingest latefyi-poller
+sudo systemctl status latefyi-ingest latefyi-poller
+```
+
+### Reverse proxy (Caddy — easy TLS)
 
 ```
 ingest.late.fyi {
@@ -1295,7 +1385,41 @@ ingest.late.fyi {
 }
 ```
 
-Update `LATEFYI_INGEST_URL` Worker secret accordingly.
+`sudo caddy reload` or restart the service. Caddy auto-provisions a Let's Encrypt cert.
+
+For nginx, equivalent reverse_proxy block. Either way: only port 443 (and 80 for ACME) is publicly exposed; 8787 stays bound to localhost.
+
+### Update the Worker
+
+```sh
+cd worker
+wrangler secret put LATEFYI_INGEST_URL
+# enter: https://ingest.late.fyi/ingest
+wrangler secret put LATEFYI_INGEST_TOKEN
+# enter: the same INGEST_TOKEN from step 2
+wrangler secret put ALLOWED_SENDERS
+# enter: you@example.com
+wrangler deploy
+```
+
+Then in CF dashboard: Email → Email Routing → Routing rules → Catch-all → "Send to a Worker" → `latefyi-ingest`.
+
+### Verifying
+
+```sh
+# Logs from systemd
+journalctl -u latefyi-ingest -f
+journalctl -u latefyi-poller -f
+
+# Check ingest is reachable + healthy
+curl https://ingest.late.fyi/health
+# → ok
+
+# Worker tail (from your laptop)
+cd worker && wrangler tail
+```
+
+Send a test email; you should see (in order): wrangler tail logs the receipt → ingest journalctl logs the POST → reply email lands in your inbox.
 
 ---
 
