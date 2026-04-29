@@ -1024,11 +1024,11 @@ export default {
       receivedAt: new Date().toISOString(),
     };
 
-    const resp = await fetch(env.TRAINME_INGEST_URL, {
+    const resp = await fetch(env.LATEFYI_INGEST_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.TRAINME_INGEST_TOKEN}`,
+        'Authorization': `Bearer ${env.LATEFYI_INGEST_TOKEN}`,
       },
       body: JSON.stringify(payload),
     });
@@ -1040,7 +1040,7 @@ export default {
 };
 ```
 
-`wrangler.toml` configures the email route `*@late.fyi → this worker` and the secrets `ALLOWED_SENDERS`, `TRAINME_INGEST_URL`, `TRAINME_INGEST_TOKEN`.
+`wrangler.toml` configures the email route `*@late.fyi → this worker` and the secrets `ALLOWED_SENDERS`, `LATEFYI_INGEST_URL`, `LATEFYI_INGEST_TOKEN`.
 
 ---
 
@@ -1054,8 +1054,8 @@ export default {
 4. Set secrets:
    ```
    wrangler secret put ALLOWED_SENDERS    # comma-separated list
-   wrangler secret put TRAINME_INGEST_URL # https://<your-vps>/ingest
-   wrangler secret put TRAINME_INGEST_TOKEN # random 32-byte hex
+   wrangler secret put LATEFYI_INGEST_URL # https://<your-vps>/ingest
+   wrangler secret put LATEFYI_INGEST_TOKEN # random 32-byte hex
    ```
 5. Deploy: `wrangler deploy`
 6. In Cloudflare dashboard → Email → Email Routing → Routing Rules:
@@ -1151,7 +1151,7 @@ The topic is `sha256(sender_email)[:16]` so it's reproducible without storing st
     "pass_env": "SMTP_PASS",
     "from_address": "noreply@late.fyi"
   },
-  "ingest_token_env": "TRAINME_INGEST_TOKEN",
+  "ingest_token_env": "LATEFYI_INGEST_TOKEN",
   "ingest_port": 8787,
   "large_terminals": [
     "Paris Gare du Nord",
@@ -1275,7 +1275,7 @@ Not applicable — single-tenant scale. At most ~10 concurrent active requests.
 1. `git clone <repo> /opt/latefyi`
 2. `cd /opt/latefyi && npm install`
 3. Edit `config/config.json` with your sender email(s) and SMTP creds
-4. Set env vars (`SMTP_PASS`, `TRAINME_INGEST_TOKEN`)
+4. Set env vars (`SMTP_PASS`, `LATEFYI_INGEST_TOKEN`)
 5. Open ingest port: `sudo ufw allow 8787/tcp` (or put behind reverse proxy with TLS)
 6. Add cron: `* * * * * /opt/latefyi/scripts/wake.sh`
 7. Deploy Worker: `cd worker && wrangler deploy`
@@ -1295,7 +1295,7 @@ ingest.late.fyi {
 }
 ```
 
-Update `TRAINME_INGEST_URL` Worker secret accordingly.
+Update `LATEFYI_INGEST_URL` Worker secret accordingly.
 
 ---
 

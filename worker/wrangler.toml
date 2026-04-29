@@ -1,0 +1,24 @@
+# Cloudflare Worker config for the latefyi inbound-email handler.
+#
+# Before first deploy:
+#   1. wrangler login
+#   2. Replace `account_id` below with your Cloudflare account ID
+#      (find it in dashboard → right sidebar)
+#   3. wrangler secret put ALLOWED_SENDERS
+#   4. wrangler secret put LATEFYI_INGEST_URL
+#   5. wrangler secret put LATEFYI_INGEST_TOKEN
+#   6. wrangler deploy
+#   7. In Cloudflare dashboard → Email → Email Routing → Routing rules:
+#        Catch-all rule: *@late.fyi → "Send to a Worker" → latefyi-ingest
+
+name = "latefyi-ingest"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+# Replace with your Cloudflare account ID
+# account_id = "..."
+
+# No KV/D1/R2/Durable Objects — Worker is stateless.
+
+[observability]
+enabled = true

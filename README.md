@@ -49,8 +49,8 @@ Full grammar and reply behaviors: see [PRD §4 and §7](docs/01-product/latefyi-
 | 2 | `users.js`, `schedule.js`, `wake.sh` (state + scheduler) | ✅ Done — 25 tests, integration verified |
 | 3 | `diff.js`, `poll.js`, `poll-runner.js` (live polling daemon) | ✅ Done — 51 tests, full email→push.jsonl chain integration-verified |
 | 4 | `reply.js`, `push.js`, `server.js` (email channel + orchestrator) | ✅ Done — 48 tests, end-to-end email-in/email-out via injected transport |
-| 5 | Cloudflare Email Worker + DNS (production ingest) | ⏳ Next |
-| 6 | ntfy opt-in flow + QR | ⏳ |
+| 5 | `worker/`, `ingest-server.js`, `smtp-transport.js` (production ingest) | ✅ Done — 13 tests, deployment runbook in `worker/README.md` |
+| 6 | ntfy opt-in flow + QR (real ntfy transport) | ⏳ Next |
 | 7 | Hardening, edge cases, 30-day soak | ⏳ |
 
 System is end-to-end usable after Phase 4. ntfy is purely additive in Phase 6.

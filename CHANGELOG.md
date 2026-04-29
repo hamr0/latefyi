@@ -10,6 +10,16 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Implementation: 0.5.0 — Phase 5 (2026-04-29)
+- `worker/index.js` — Cloudflare Email Worker. Allowlist enforcement at the edge (silent drop, no backscatter), then forwards a JSON payload (subject + body + headers + msgid) to the VPS ingest server with a Bearer token. Stateless. ~50 LOC.
+- `worker/wrangler.toml` — minimal Worker config; `account_id` to fill in at deploy.
+- `worker/README.md` — deployment runbook (wrangler login → secrets → deploy → wire Email Routing).
+- `src/ingest-server.js` — Node HTTP server. `GET /health` (unauthenticated liveness probe) and `POST /ingest` (Bearer-token-authed). Calls `handleInbound` and dispatches the reply through an injected transport. Caps payloads at 1 MB. CLI entry wires real hafas-clients + SMTP transport from environment. 13 new tests covering auth, allowlist, transport-failure tolerance, payload limits, malformed JSON.
+- `src/smtp-transport.js` — `nodemailer`-based adapter exposing the `{ sendEmail, sendNtfy }` interface push.js expects. Threading headers preserved (In-Reply-To, References, Message-ID). `sendNtfy` throws — Phase 6 wires that.
+- `nodemailer` added as a dependency. AGENT_RULES external-dep checklist passes (security-critical SMTP, established, lightweight). Not loaded by tests; only by the production CLI entry.
+- PRD §14 secret names updated from `TRAINME_INGEST_*` to `LATEFYI_INGEST_*` to match deployed worker.
+- 13 new tests; **196/196 passing total.**
+
 ### Implementation: 0.4.0 — Phase 4 (2026-04-29)
 - `src/reply.js` — pure templating. Single FOOTER constant (PRD §7) appended to every reply. Functions for confirmation (channel-aware), missing-context, train-not-found, station-not-on-route (with route + suggestion), ambiguous-station (numbered list per §7a), train-already-passed, unauthorized-sender, STOP/STOP TRIP/STOP ALL confirmations, ntfy opt-in (URL + setup), threaded push reply for tracked-train events, generic error.
 - `src/push.js` — notification dispatcher. Channel-preference routing (email / ntfy / both). Critical-event override per §6 (cancellation, terminating-short, etc. always go to all channels). ntfy payload mapping (priority + tags + topic from sender hash). Rolling failure-streak counter for §6 ntfy fallback. Transport injected (sendEmail / sendNtfy).
