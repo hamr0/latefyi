@@ -169,12 +169,45 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const name of ['oebb', 'pkp']) {
     try {
       const mod = await import(`hafas-client/p/${name}/index.js`);
-      profiles[name] = createClient(mod.profile || mod.default, 'latefyi/0.3.0');
+      profiles[name] = createClient(mod.profile || mod.default, 'latefyi/0.6.0');
     } catch (e) {
       console.error(`failed to load profile ${name}: ${e.message}`);
     }
   }
   const getClient = (name) => profiles[name] || null;
+
+  // Compose transports: SMTP for email pushes, ntfy for push pushes.
+  // Either may be absent (dry-run for missing leg).
+  let transport = null;
+  let getUserChannel = null;
+  const sendEmailFn = async () => { throw new Error('email not configured'); };
+  const sendNtfyFn = async () => { throw new Error('ntfy not configured'); };
+  let smtp = null, ntfy = null;
+  if (process.env.SMTP_HOST) {
+    const { createSmtpTransport } = await import('./smtp-transport.js');
+    smtp = createSmtpTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+      fromAddress: process.env.SMTP_FROM || 'noreply@late.fyi',
+    });
+    console.log(`[poll-runner] SMTP: ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 587}`);
+  }
+  {
+    const { createNtfyTransport } = await import('./ntfy-transport.js');
+    ntfy = createNtfyTransport({ baseUrl: process.env.NTFY_BASE_URL || 'https://ntfy.sh' });
+    console.log(`[poll-runner] ntfy: ${process.env.NTFY_BASE_URL || 'https://ntfy.sh'}`);
+  }
+  transport = {
+    sendEmail: smtp ? smtp.sendEmail.bind(smtp) : sendEmailFn,
+    sendNtfy: ntfy ? ntfy.sendNtfy.bind(ntfy) : sendNtfyFn,
+  };
+
+  // Per-user channel preference lookup.
+  const { getOrCreate } = await import('./users.js');
+  getUserChannel = (sender) => getOrCreate(sender, stateDir).channel || 'email';
+
   console.log(`[poll-runner] starting; stateDir=${stateDir} logDir=${logDir}`);
-  await run({ stateDir, logDir, getClient });
+  await run({ stateDir, logDir, getClient, transport, getUserChannel });
 }

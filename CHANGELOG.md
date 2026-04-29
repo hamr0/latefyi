@@ -10,6 +10,14 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Implementation: 0.6.0 — Phase 6 (ntfy opt-in, partial)
+- `src/ntfy-transport.js` — real ntfy POST adapter. `createNtfyTransport({ baseUrl, fetch? })` returns `{ sendNtfy({ topic, title, message, priority?, tags? }) }` matching the payload shape `push.js` already builds. Title/Priority/Tags map to ntfy headers. Throws on non-2xx. 7 new tests (POST URL composition, header serialization, error mapping, missing-fetch guard, missing-topic guard, default base URL).
+- `src/poll-runner.js` CLI — composes SMTP + ntfy transports and wires `getUserChannel` from `users.js`. Now actually delivers events instead of only logging to `push.jsonl`.
+- `src/reply.js` — `ntfyOptInReply` reworked. Removed the QR-code stub (proportional-font mail clients render ASCII QR poorly, and the QR helps only in laptop-opt-in cases). Replaced with `ntfy://subscribe/<topic>` deep link (one-tap subscribe on phones with the ntfy app installed) plus the plain `https://ntfy.sh/<topic>` URL as fallback. Setup steps streamlined.
+- 1 new test added in `tests/reply.test.js` covering deep-link presence.
+- 204/204 tests pass.
+- **Deferred to Phase 7**: ntfy fail-streak → email fallback promotion (counter is already persisted across polls; the promotion + one-time notice will land alongside abuse limits).
+
 ### Live: first real-world tracking request (2026-04-29)
 - Confirmed end-to-end with a real email from an Outlook inbox: `To: ICE145@late.fyi`, `Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof`. Cloudflare Email Routing → Worker → VPS ingest → resolve (ÖBB HAFAS) → schedule → confirmation reply delivered to sender within seconds. Reply correctly threaded, scheduled departure/arrival times rendered, T-30 wake time shown, footer rendered.
 - Catch-all `*@late.fyi` switched from Drop → Worker via dashboard (the API token used for Worker upload didn't include `Email Routing Rules: Edit`, by design — least-privilege).

@@ -177,6 +177,13 @@ test('ntfy opt-in includes topic URL + setup steps', () => {
   assert.match(r.body, /Install ntfy/);
 });
 
+test('ntfy opt-in includes ntfy:// deep link for one-tap mobile subscribe', () => {
+  const r = ntfyOptInReply({
+    topic: 'latefyi-abc123def456', sender: 'a@b',
+  });
+  assert.match(r.body, /ntfy:\/\/subscribe\/latefyi-abc123def456/);
+});
+
 test('ntfy opt-in respects custom baseUrl (self-hosted)', () => {
   const r = ntfyOptInReply({
     topic: 'latefyi-abc', sender: 'a@b', baseUrl: 'https://ntfy.example.com',
