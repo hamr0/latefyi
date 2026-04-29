@@ -148,10 +148,12 @@ export async function resolve({ parsed, primaryClient, fallbackClient, aliases =
       validation[field] = { ambiguous: true, candidates: m.candidates };
     } else if (m.status === 'not_on_route') {
       return { kind: 'error', code: 'station_not_on_route',
+               field, userText,
                message: `${userText} is not a stop on ${trip.line || parsed.trainNum}`,
                details: { route: trip.routeStopNames, suggestion: m.suggestion } };
     } else {
       return { kind: 'error', code: 'station_no_match',
+               field, userText,
                message: `couldn't match "${userText}" against any stop on ${trip.line || parsed.trainNum}`,
                details: { route: trip.routeStopNames } };
     }

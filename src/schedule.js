@@ -66,9 +66,13 @@ function computePollEnd(resolved, opts) {
 }
 
 // Build the on-disk record per PRD §12.
-export function buildPendingRecord({ msgid, sender, parsed, resolved, receivedAt }) {
+//   confirmationMsgid (optional): Message-ID of the outbound confirmation
+//   reply, used by the poller to thread subsequent update emails into the
+//   same mail-client conversation (PRD §6).
+export function buildPendingRecord({ msgid, sender, parsed, resolved, receivedAt, confirmationMsgid = null }) {
   return {
     msgid,
+    confirmationMsgid,
     received_at: receivedAt || new Date().toISOString(),
     sender,
     request: {
@@ -114,7 +118,7 @@ export function buildPendingRecord({ msgid, sender, parsed, resolved, receivedAt
 //
 // Idempotent: re-calling with the same msgid overwrites the same file
 // atomically (last write wins).
-export function schedule({ msgid, sender, parsed, resolved, stateDir, receivedAt, opts = {} }) {
+export function schedule({ msgid, sender, parsed, resolved, stateDir, receivedAt, confirmationMsgid = null, opts = {} }) {
   if (!msgid) throw new Error('schedule: msgid required');
   if (!sender) throw new Error('schedule: sender required');
   if (!resolved || resolved.kind !== 'resolved') {
@@ -122,7 +126,7 @@ export function schedule({ msgid, sender, parsed, resolved, stateDir, receivedAt
   }
   ensureStateDirs(stateDir);
 
-  const record = buildPendingRecord({ msgid, sender, parsed, resolved, receivedAt });
+  const record = buildPendingRecord({ msgid, sender, parsed, resolved, receivedAt, confirmationMsgid });
   record.schedule.poll_start_time = computePollStart(resolved, opts);
   record.schedule.poll_end_time = computePollEnd(resolved, opts);
 

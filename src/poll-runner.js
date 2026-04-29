@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { poll, shouldPollNow, isTerminal } from './poll.js';
+import { dispatch } from './push.js';
 
 function ensureDirs(stateDir, logDir) {
   for (const sub of ['active', 'done', 'errors']) mkdirSync(join(stateDir, sub), { recursive: true });
@@ -32,12 +33,17 @@ function readJson(path) {
 
 // One pass over state/active/. Returns a summary (helpful for tests + logs).
 //
-//   stateDir   path
-//   logDir     path
-//   getClient  (endpointName: string) → hafasClient
-//   now        ms (defaults to Date.now())
+//   stateDir       path
+//   logDir         path
+//   getClient      (endpointName: string) → hafasClient
+//   now            ms (defaults to Date.now())
+//   transport?     { sendEmail, sendNtfy } — when present, events are
+//                  ALSO dispatched to the user via push.dispatch.
+//                  When absent (default), only the audit log is written.
+//   getUserChannel?  (sender: string) → 'email'|'ntfy'|'both'
+//                  Required if transport is provided. Looks up per-user pref.
 //
-export async function tick({ stateDir, logDir, getClient, now = Date.now() }) {
+export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null }) {
   ensureDirs(stateDir, logDir);
   const activeDir = join(stateDir, 'active');
   const doneDir = join(stateDir, 'done');
@@ -95,8 +101,33 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now() }) {
       }) + '\n');
     }
 
+    // Optional delivery: if a transport was provided, dispatch the events
+    // through push.dispatch. The audit log above is independent of delivery
+    // success — it always records what *would* have been sent.
+    let updatedRecord = result.updatedRecord;
+    if (transport && getUserChannel && result.events.length > 0) {
+      const userChannel = getUserChannel(record.sender) || 'email';
+      const dispatchResults = await dispatch({
+        events: result.events,
+        sender: record.sender,
+        userChannel,
+        line: record.resolved?.line,
+        trainNum: record.request.trainNum,
+        confirmationMsgid: record.confirmationMsgid,
+        transport,
+        ntfyFailureCounter: record.state?.ntfyFailureCounter || 0,
+      });
+      // Persist the rolling ntfy failure streak across polls.
+      const lastStreak = dispatchResults.length ? dispatchResults[dispatchResults.length - 1].ntfyFailStreak : 0;
+      updatedRecord = {
+        ...updatedRecord,
+        state: { ...updatedRecord.state, ntfyFailureCounter: lastStreak },
+      };
+      summary.delivered = (summary.delivered || 0) + dispatchResults.length;
+    }
+
     // Atomic write back (still in active/).
-    atomicWrite(path, result.updatedRecord);
+    atomicWrite(path, updatedRecord);
 
     // Move to done/ if terminal.
     if (isTerminal(result.updatedRecord, now)) {

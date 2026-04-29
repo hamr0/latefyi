@@ -10,6 +10,15 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Implementation: 0.4.0 — Phase 4 (2026-04-29)
+- `src/reply.js` — pure templating. Single FOOTER constant (PRD §7) appended to every reply. Functions for confirmation (channel-aware), missing-context, train-not-found, station-not-on-route (with route + suggestion), ambiguous-station (numbered list per §7a), train-already-passed, unauthorized-sender, STOP/STOP TRIP/STOP ALL confirmations, ntfy opt-in (URL + setup), threaded push reply for tracked-train events, generic error.
+- `src/push.js` — notification dispatcher. Channel-preference routing (email / ntfy / both). Critical-event override per §6 (cancellation, terminating-short, etc. always go to all channels). ntfy payload mapping (priority + tags + topic from sender hash). Rolling failure-streak counter for §6 ntfy fallback. Transport injected (sendEmail / sendNtfy).
+- `src/server.js` — inbound-email orchestrator: parse → route by kind → resolve+schedule+confirm | stop | config | help | error reply. Allowlist enforcement at the edge (silent drop, no backscatter). Generates outbound Message-IDs and stores them on the pending record so subsequent updates thread correctly.
+- `src/schedule.js` extended with optional `confirmationMsgid` field on the record (so the poller threads update emails into the original confirmation conversation).
+- `src/poll-runner.js` extended with optional `transport` + `getUserChannel` parameters: when provided, events are dispatched via push.dispatch in addition to the audit log. When absent, falls back to log-only behavior (preserves prior tests).
+- `src/resolve.js` errors now carry `field` and `userText` for cleaner downstream reply construction.
+- 48 new tests (reply 25, push 12, server 11). **183/183 passing total.**
+
 ### Implementation: 0.3.0 — Phase 3 (2026-04-29)
 - `src/diff.js` — pure `(prev, curr) → PushEvent[]` implementing PRD §9 + the unified taxonomy. Mode-aware anchor (dep for B, arr for A). 22 tests covering all event types and suppression boundaries.
 - `src/poll.js` — single-train poll cycle: builds `TrainState` from a hafas-client trip, runs `diff`, returns updated record. Exports `computePhase`, `pollIntervalMs`, `shouldPollNow`, `isTerminal` for the runner. Handles 6-consecutive-failure tracking-lost semantics. 19 tests.
