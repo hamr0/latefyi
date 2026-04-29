@@ -15,8 +15,7 @@ name = "latefyi-ingest"
 main = "index.js"
 compatibility_date = "2025-01-01"
 
-# Replace with your Cloudflare account ID
-# account_id = "..."
+account_id = "6450a2fe57c214d20953dd12c532dbea"
 
 # No KV/D1/R2/Durable Objects — Worker is stateless.
 

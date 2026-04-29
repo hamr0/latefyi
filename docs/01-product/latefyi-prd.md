@@ -1,9 +1,9 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.3.0-draft
-**Status:** Phases 1 & 2 implemented (parse/stations/resolve/users/schedule/wake.sh — 83/83 tests passing — validated live against ICE 145 Amsterdam→Berlin on 2026-04-29). Mode A event coverage clarified to match Mode B. Unified notification taxonomy added at §9.
+**Version:** 1.4.0-draft
+**Status:** Phases 1–5 implemented and live-deployed at `late.fyi`. 196/196 tests pass. End-to-end VPS pipeline verified on 2026-04-29 (RackNerd AlmaLinux 8 + nginx + Postfix). Outbound deliverability hardening (SPF / DKIM / PTR for `noreply@late.fyi`) is the Phase 7 next step.
 
-See `CHANGELOG.md` for the full revision history.
+See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr
 **Intended developer:** Claude (Sonnet 4.6+ recommended for implementation)
 
@@ -1262,6 +1262,8 @@ Not applicable — single-tenant scale. At most ~10 concurrent active requests.
 ---
 
 ## 21. Deployment
+
+> **Operator runbook (copy-pasteable, including a real-world example):** see [`docs/cloudflare-setup.md`](../cloudflare-setup.md). This section keeps the reference architecture and is the source of truth for *what* lives where; the runbook is the source of truth for *how* to set it up step by step.
 
 ### Where each piece runs
 

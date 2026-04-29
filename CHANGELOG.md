@@ -10,6 +10,24 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Deployed to production (2026-04-29)
+- First production deployment at `late.fyi`. RackNerd VPS (AlmaLinux 8.10) at `155.94.144.191` already running `addypin.com` — latefyi added alongside without disturbing the existing site.
+- Provisioned: dedicated `latefyi` system user, `/opt/latefyi` clone, `npm install --omit=dev`, `/etc/latefyi.env` with INGEST_TOKEN/ALLOWED_SENDERS/SMTP creds, two systemd units (`latefyi-ingest`, `latefyi-poller`) with hardening (NoNewPrivileges, ProtectSystem=strict, ReadWritePaths, ProtectHome, PrivateTmp), cron for `wake.sh`.
+- nginx vhost `ingest.late.fyi` co-located with addypin's vhost. TLS via certbot webroot mode (matches addypin's convention). HTTP→HTTPS redirect, ACME path open for renewals, per-IP connection limit, 1MB body cap matching `ingest-server.js`.
+- DNS in Cloudflare: A record `ingest.late.fyi` → VPS IP (DNS only, gray cloud). Email Routing enabled.
+- Worker `latefyi-ingest` deployed via direct CF API (bypassing `wrangler` and its required Account → User Details: Read scope). Three secrets set: ALLOWED_SENDERS, LATEFYI_INGEST_URL, LATEFYI_INGEST_TOKEN.
+- Email Routing catch-all switched from Drop → Worker.
+- VPS-side end-to-end test passed: synthetic POST to `/ingest` produced a pending record + confirmation reply delivered to Outlook (`status=sent ... 250 2.6.0 Queued mail for delivery`).
+- **Outbound deliverability todo (Phase 7):** SPF needs the VPS IP added; DKIM signing for `noreply@late.fyi` (opendkim already on the box for addypin, just needs a signing-table entry); PTR; same-domain enforcement on receiver junk filters.
+
+### Code: localhost-only ingest bind (2026-04-29)
+- `src/ingest-server.js` now binds to `127.0.0.1` by default; override via `INGEST_HOST=0.0.0.0`. Reverse proxy is always co-located, so binding to all interfaces just widened the attack surface for nothing. firewalld already blocked external access on the deployed VPS, but defense-in-depth: localhost-only from the start. 196/196 tests still pass.
+
+### Docs (2026-04-29)
+- New: `docs/cloudflare-setup.md` — complete deployment runbook with the 16 actual steps used for late.fyi (DNS → bootstrap → env → systemd → cron → nginx HTTP → certbot → nginx HTTPS → smoke test → CF token → Worker upload → secrets → catch-all rule → real test → outbound hardening notes → recovery table).
+- README rewritten to be **user-facing**: how to send the email, optional headers (Trip:, Channels:), STOP variants, what gets pushed (the four windows), coverage, limitations. Developer info moved out into links to PRD / CHANGELOG / cloudflare-setup.
+- PRD §21 expanded into the canonical reference for the deployment runbook (kept synchronized with `docs/cloudflare-setup.md`).
+
 ### Docs: deployment runbook (2026-04-29)
 - PRD §21 expanded into a complete VPS-existing-runbook: where each component lives, systemd unit files for `latefyi-ingest` + `latefyi-poller`, Caddy reverse-proxy block, env-file template, DNS A record + cron + Worker secrets — top-to-bottom-copy-pasteable.
 - README architecture diagram redrawn to show the Cloudflare ↔ VPS split clearly. Added "Deploy to your own VPS" 8-step summary linking out to PRD §21.
