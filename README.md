@@ -13,13 +13,31 @@ Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof
 
 (Picking someone up? Just `To: <station>`, no `From:`.)
 
-## You'll get
+## You'll get back (in seconds)
 
-A reply in seconds confirming the train. Then silence — until the platform is announced, the train is delayed, cancelled, or arrives.
+```
+Tracking ICE 145, Amsterdam Centraal → Berlin Ostbahnhof.
+Scheduled: dep 10:00, arr 16:02.
+Updates by email starting T-30 at 09:30.
+```
 
-## To stop
+Then silence — until the platform is announced, the train is delayed, cancelled, or arrives.
 
-Reply `STOP`.
+## Multi-leg trip?
+
+Tag each train with the same `Trip:` name and stop them all in one go.
+
+```
+To:      ICE145@late.fyi
+Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof
+         Trip: berlin-weekend
+```
+
+Reply `STOP TRIP berlin-weekend` to cancel the whole chain.
+
+## To stop one train
+
+Reply `STOP` to any update.
 
 ---
 
