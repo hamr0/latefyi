@@ -1,7 +1,7 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.4.0-draft
-**Status:** Phases 1–5 implemented and live-deployed at `late.fyi`. 196/196 tests pass. End-to-end VPS pipeline verified on 2026-04-29 (RackNerd AlmaLinux 8 + nginx + Postfix). Outbound deliverability hardening (SPF / DKIM / PTR for `noreply@late.fyi`) is the Phase 7 next step.
+**Version:** 1.4.0
+**Status:** Phases 1–5 implemented and live at `late.fyi`. 196/196 tests pass. First real-world inbound tracking request (ICE 145, Amsterdam Centraal → Berlin Ostbahnhof) confirmed end-to-end on 2026-04-29 — email round-trip via Cloudflare Email Routing → Worker → VPS ingest → reply delivered to sender's inbox. Outbound deliverability hardening (SPF / DKIM / PTR for `noreply@late.fyi`) is the Phase 7 next step.
 
 See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr

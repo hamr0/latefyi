@@ -10,6 +10,11 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Live: first real-world tracking request (2026-04-29)
+- Confirmed end-to-end with a real email from an Outlook inbox: `To: ICE145@late.fyi`, `Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof`. Cloudflare Email Routing → Worker → VPS ingest → resolve (ÖBB HAFAS) → schedule → confirmation reply delivered to sender within seconds. Reply correctly threaded, scheduled departure/arrival times rendered, T-30 wake time shown, footer rendered.
+- Catch-all `*@late.fyi` switched from Drop → Worker via dashboard (the API token used for Worker upload didn't include `Email Routing Rules: Edit`, by design — least-privilege).
+- PRD bumped to **1.4.0** (out of draft).
+
 ### Deployed to production (2026-04-29)
 - First production deployment at `late.fyi`. RackNerd VPS (AlmaLinux 8.10) at `155.94.144.191` already running `addypin.com` — latefyi added alongside without disturbing the existing site.
 - Provisioned: dedicated `latefyi` system user, `/opt/latefyi` clone, `npm install --omit=dev`, `/etc/latefyi.env` with INGEST_TOKEN/ALLOWED_SENDERS/SMTP creds, two systemd units (`latefyi-ingest`, `latefyi-poller`) with hardening (NoNewPrivileges, ProtectSystem=strict, ReadWritePaths, ProtectHome, PrivateTmp), cron for `wake.sh`.
