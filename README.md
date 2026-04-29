@@ -2,7 +2,7 @@
 
 Email a train number. Get told when something changes.
 
-No app. No account. No noise on time.
+European trains only. No app. No account. No noise on time.
 
 ## Send this
 
