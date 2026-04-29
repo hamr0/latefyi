@@ -1,0 +1,271 @@
+// Behavior tests for parse(email).
+// Uses node:test (built-in, no external dep). Tests fixtures end-to-end —
+// each test sets up a realistic email payload and asserts the parsed shape.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { parse } from '../src/parse.js';
+
+// ---- helpers ----
+const email = (over = {}) => ({
+  from: 'amr@example.com',
+  to: 'ICE145@late.fyi',
+  subject: '',
+  body: '',
+  msgid: '<test@local>',
+  headers: {},
+  ...over,
+});
+
+// ===== Mode A (pickup) =====
+
+test('Mode A: To: only in subject → pickup mode', () => {
+  const r = parse(email({ to: 'TGV9876@late.fyi', subject: 'To: Lille Flanders' }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.trainNum, 'TGV9876');
+  assert.equal(r.mode, 'A');
+  assert.equal(r.from, null);
+  assert.equal(r.to, 'Lille Flanders');
+});
+
+test('Mode A: To: in body when subject empty', () => {
+  const r = parse(email({ to: 'tgv9876@late.fyi', body: 'To: Amsterdam Centraal' }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.mode, 'A');
+  assert.equal(r.to, 'Amsterdam Centraal');
+});
+
+// ===== Mode B (boarding) =====
+
+test('Mode B: From: alone (ride to terminus)', () => {
+  const r = parse(email({ to: 'ICE104@late.fyi', subject: 'From: Frankfurt Hbf' }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.mode, 'B');
+  assert.equal(r.from, 'Frankfurt Hbf');
+  assert.equal(r.to, null);
+});
+
+test('Mode B: From + To in subject, comma-separated', () => {
+  const r = parse(email({
+    to: 'RE19750@late.fyi',
+    subject: 'From: Amiens, To: Lille Flanders',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.mode, 'B');
+  assert.equal(r.from, 'Amiens');
+  assert.equal(r.to, 'Lille Flanders');
+});
+
+test('Mode B with trip tag', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'From: Amsterdam, To: Paris Nord, Trip: rome-2026',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.trip, 'rome-2026');
+});
+
+// ===== Case insensitivity =====
+
+test('header keys are case-insensitive', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'FROM: Amsterdam, tO: Berlin Ostbahnhof',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.mode, 'B');
+  assert.equal(r.from, 'Amsterdam');
+  assert.equal(r.to, 'Berlin Ostbahnhof');
+});
+
+test('local-part is uppercased regardless of input case', () => {
+  const r = parse(email({ to: 'ice145@late.fyi', subject: 'From: Amsterdam' }));
+  assert.equal(r.trainNum, 'ICE145');
+});
+
+// ===== Missing context =====
+
+test('bare email (no From, no To) → mode MISSING', () => {
+  const r = parse(email({ to: 'ICE145@late.fyi', subject: '', body: '' }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.mode, 'MISSING');
+  assert.equal(r.from, null);
+  assert.equal(r.to, null);
+});
+
+// ===== Channels override =====
+
+test('per-request Channels: header parses', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: A, To: B, Channels: ntfy',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.channels, 'ntfy');
+});
+
+test('per-request Channels: rejects invalid value', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: A, To: B, Channels: telegram',
+  }));
+  assert.equal(r.kind, 'error');
+  assert.equal(r.code, 'invalid_channels');
+});
+
+// ===== Train number validation =====
+
+test('invalid train number (no digits) → error', () => {
+  const r = parse(email({ to: 'hello@late.fyi', subject: 'From: A' }));
+  assert.equal(r.kind, 'error');
+  assert.equal(r.code, 'invalid_trainnum');
+});
+
+test('valid train numbers across operators', () => {
+  for (const num of ['ICE145', 'EUR9316', 'TGV6611', 'RE19750', 'IC2812', '9876']) {
+    const r = parse(email({ to: `${num}@late.fyi`, subject: 'From: A' }));
+    assert.equal(r.kind, 'track', `expected track for ${num}, got ${r.kind}: ${r.message || ''}`);
+    assert.equal(r.trainNum, num);
+  }
+});
+
+// ===== Trip tag validation =====
+
+test('trip tag with disallowed chars → error', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: A, Trip: my trip!',
+  }));
+  // "my" alone before the space is captured by HEADER_RE (header is `[^,\n\r]+`),
+  // so we get "my trip!" as the trip value — which fails validation.
+  assert.equal(r.kind, 'error');
+  assert.equal(r.code, 'invalid_trip');
+});
+
+test('trip tag too long → error', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: `From: A, Trip: ${'x'.repeat(40)}`,
+  }));
+  assert.equal(r.kind, 'error');
+  assert.equal(r.code, 'invalid_trip');
+});
+
+// ===== STOP variants =====
+
+test('STOP alone in body, threaded reply → stop scope=this', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    body: 'STOP',
+    headers: { 'In-Reply-To': '<conf-ICE145@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'stop');
+  // local-part is a valid train number → upgraded to single+target
+  assert.equal(r.scope, 'single');
+  assert.equal(r.target, 'ICE145');
+  assert.equal(r.inReplyTo, '<conf-ICE145@late.fyi>');
+});
+
+test('STOP <TRAINNUM> from any address', () => {
+  const r = parse(email({ to: 'ICE145@late.fyi', body: 'STOP TGV6611' }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'single');
+  assert.equal(r.target, 'TGV6611');
+});
+
+test('STOP TRIP <name>', () => {
+  const r = parse(email({ to: 'stop@late.fyi', subject: 'STOP TRIP rome' }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'trip');
+  assert.equal(r.target, 'rome');
+});
+
+test('STOP ALL', () => {
+  const r = parse(email({ to: 'stop@late.fyi', body: 'stop all' }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'all');
+});
+
+// ===== Reserved local-parts =====
+
+test('config@ + CHANNELS ntfy → config kind', () => {
+  const r = parse(email({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }));
+  assert.equal(r.kind, 'config');
+  assert.equal(r.field, 'channels');
+  assert.equal(r.value, 'ntfy');
+});
+
+test('config@ without CHANNELS → error', () => {
+  const r = parse(email({ to: 'config@late.fyi', subject: 'hello' }));
+  assert.equal(r.kind, 'error');
+  assert.equal(r.code, 'config_unrecognized');
+});
+
+test('help@ → help kind', () => {
+  const r = parse(email({ to: 'help@late.fyi', subject: '' }));
+  assert.equal(r.kind, 'help');
+});
+
+// ===== Disambiguation reply =====
+
+test('reply with In-Reply-To, non-train local-part → reply kind', () => {
+  const r = parse(email({
+    to: 'noreply@late.fyi', // came back to our reply, not a fresh track
+    subject: '',
+    body: '2',
+    headers: { 'In-Reply-To': '<disamb-abc@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'reply');
+  assert.equal(r.answer, '2');
+  assert.equal(r.inReplyTo, '<disamb-abc@late.fyi>');
+});
+
+test('reply with In-Reply-To, valid train local-part → still treated as fresh track', () => {
+  // User re-sends to ICE145@ instead of replying to noreply@: parser
+  // returns a track request, not a reply, since the address signals intent.
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam, To: Berlin Ostbahnhof',
+    headers: { 'In-Reply-To': '<disamb-abc@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.inReplyTo, '<disamb-abc@late.fyi>');
+});
+
+// ===== Robustness =====
+
+test('null/garbage email returns error not throw', () => {
+  assert.equal(parse(null).kind, 'error');
+  assert.equal(parse(undefined).kind, 'error');
+  assert.equal(parse('not an object').kind, 'error');
+});
+
+test('extra unknown header in subject is ignored', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam, X-Something: ignore-me, To: Berlin',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'Amsterdam');
+  assert.equal(r.to, 'Berlin');
+});
+
+test('headers in body when subject contains junk', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'Re: tracking',
+    body: 'From: Amsterdam, To: Berlin',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'Amsterdam');
+  assert.equal(r.to, 'Berlin');
+});
+
+test('first occurrence of a header wins (subject beats body)', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam',
+    body: 'From: Berlin',
+  }));
+  assert.equal(r.from, 'Amsterdam');
+});

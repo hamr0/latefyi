@@ -1,0 +1,44 @@
+{
+  "paris nord": ["Paris Nord", "Paris Gare du Nord"],
+  "paris lyon": ["Paris Gare de Lyon"],
+  "paris est": ["Paris Est", "Paris Gare de l'Est"],
+  "paris montparnasse": ["Paris Montparnasse"],
+  "paris bercy": ["Paris Bercy"],
+  "paris saint-lazare": ["Paris Saint-Lazare"],
+
+  "lille": ["Lille Flandres", "Lille Europe"],
+  "lille flanders": ["Lille Flandres"],
+
+  "brussels": ["Brussels Midi", "Bruxelles Midi", "Bruxelles Midi/Zuid"],
+  "bruxelles": ["Brussels Midi", "Bruxelles Midi", "Bruxelles Midi/Zuid"],
+  "brussels midi": ["Brussels Midi", "Bruxelles Midi", "Bruxelles Midi/Zuid"],
+
+  "frankfurt": ["Frankfurt Hbf", "Frankfurt(Main)Hbf", "Frankfurt (Main) Hbf"],
+  "frankfurt hbf": ["Frankfurt Hbf", "Frankfurt(Main)Hbf"],
+
+  "munich": ["München Hbf"],
+  "muenchen": ["München Hbf"],
+
+  "cologne": ["Köln Hbf"],
+  "koeln": ["Köln Hbf"],
+
+  "vienna": ["Wien Hbf", "Wien Hauptbahnhof"],
+  "wien": ["Wien Hbf", "Wien Hauptbahnhof"],
+
+  "rome": ["Roma Termini"],
+  "roma": ["Roma Termini"],
+
+  "milan": ["Milano Centrale"],
+  "milano": ["Milano Centrale"],
+
+  "amsterdam": ["Amsterdam Centraal"],
+  "rotterdam": ["Rotterdam Centraal"],
+
+  "zurich": ["Zürich HB"],
+  "zuerich": ["Zürich HB"],
+
+  "london": ["London St. Pancras", "London St Pancras"],
+  "st pancras": ["London St. Pancras", "London St Pancras"],
+
+  "berlin": ["Berlin Hbf", "Berlin Hauptbahnhof", "Berlin Ostbahnhof"]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "latefyi",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Email-driven European train tracker",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "hafas-client": "^6.3.4"
+  }
+}
