@@ -1,7 +1,9 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.2.0-draft
-**Status:** Implementation-ready (post-POC: §8 endpoint strategy revised, §7a disambiguation flow added, §4 `Trip:` tag added, §7 standard footer added, multi-leg policy locked to one-email-per-train)
+**Version:** 1.3.0-draft
+**Status:** Phases 1 & 2 implemented (parse/stations/resolve/users/schedule/wake.sh — 83/83 tests passing — validated live against ICE 145 Amsterdam→Berlin on 2026-04-29). Mode A event coverage clarified to match Mode B. Unified notification taxonomy added at §9.
+
+See `CHANGELOG.md` for the full revision history.
 **Owner:** Amr
 **Intended developer:** Claude (Sonnet 4.6+ recommended for implementation)
 
@@ -139,37 +141,34 @@ Body: From: Frankfurt Hbf
 
 ## 5. Operational Modes
 
+**Both modes share the same event categories.** The difference is only the *anchor station* and the *polling window*. The unified notification taxonomy is in §9; the per-mode summary below is for routing logic, not for event-type definition.
+
 ### Mode A — Pickup (`To:` only)
 
 - **Trigger:** `To:` present, `From:` absent
-- **Watching:** arrival board at `To:` station for the specified train
-- **Push events:** arrival platform assigned, ETA changes ≥2 min, cancellation, replacement service
-- **Polling window:** T-30 (scheduled arrival) to actual arrival or +30 min grace
-- **Terminal state:** train arrives, train cancelled, or +30 min past last known ETA with no data
+- **Anchor:** the `To:` station (where the user is meeting the train)
+- **Watching:** arrival board at `To:`, plus the upstream route to detect early termination, rerouting, or replacement service
+- **Push events:** see §9. In Mode A "platform" means *arrival platform at `To:`*; "delay" means *delay propagating to `To:`'s arrival*; "terminating short" means *train ends before reaching `To:`*. Cancellation, replacement service, and mid-route disruption all apply.
+- **Polling window:** T-30 (scheduled arrival at `To:`) to actual arrival or +30 min grace
+- **Terminal state:** train arrives at `To:`, train cancelled, or +30 min past last known ETA with no data
 
 ### Mode B — Boarding (`From:` present)
 
 - **Trigger:** `From:` present (with or without `To:`)
-- **Watching:** departure board at `From:` station + downstream stops on the train's route until `To:` (or terminus if `To:` absent)
-- **Push events:**
-  - Departure platform assigned at `From:` (loud)
-  - Departure delay change ≥2 min
-  - Platform change (loud — user may already be on the wrong platform)
-  - Cancellation or replacement bus (loudest)
-  - Post-departure: downstream delay change ≥5 min affecting `To:` arrival
-  - Mid-route disruption: train terminating early, rerouted, splitting
-  - Arrival at `To:` (terminal push, ends tracking)
-- **Polling window:** T-30 (scheduled departure at `From:`) until arrival at `To:` (or terminus) +5 min grace
+- **Anchor:** the `From:` station (where the user is boarding)
+- **Watching:** departure board at `From:`, plus downstream stops on the route up to `To:` (or terminus if `To:` absent), to detect mid-route delay propagation, rerouting, splitting, or early termination
+- **Push events:** see §9. In Mode B "platform" applies to *both* the departure platform at `From:` AND the arrival platform at `To:`; "delay" thresholds tighten pre-departure (≥2 min) and loosen in-transit (≥5 min) per §9.
+- **Polling window:** T-30 (scheduled departure at `From:`) until arrival at `To:` (or terminus) +30 min grace
 - **Terminal state:** arrival at `To:`, cancellation, or train passes `To:` station per live data
 
 ### Polling cadence by phase
 
 | Phase | Window | Frequency |
 |---|---|---|
-| Pre-T-30 | from email receipt to T-30 | Not polled (scheduler waits) |
-| Pre-departure | T-30 to scheduled departure (Mode B) or scheduled arrival (Mode A) | Every 30s |
+| Pre-T-30 | from email receipt to T-30 | Not polled (scheduler waits — see §10) |
+| Pre-anchor | T-30 to scheduled departure (Mode B) or T-30 to scheduled arrival (Mode A) | Every 30s |
 | In-transit (Mode B only) | scheduled departure to scheduled arrival at `To:` | Every 60s |
-| Arrival window | T-5 to actual arrival | Every 30s |
+| Arrival window | T-5 to actual arrival (both modes) | Every 30s |
 | Grace | actual arrival or +30min cutoff | Stop |
 
 Exception: large terminal stations (Paris-Nord, Gare de Lyon, Frankfurt Hbf, Roma Termini, etc. — list in `config.json`) extend pre-departure window to T-45 because they often announce later.
@@ -565,6 +564,40 @@ Mitigation posture for v1:
 
 ## 9. Polling Cadence & Change Detection
 
+### Notification taxonomy (canonical, applies to both modes)
+
+What gets pushed, ever, falls into exactly four categories:
+
+**Window 1 — Tracking start (instant + T-30):**
+- *Confirmation reply* — sent within seconds of the user's email arriving (§7). One email, threaded. Not subject to suppression.
+- *T-30 mandatory push* — fired at the first poll after T-30, regardless of whether anything changed. Reassures the user that tracking is live. (PRD §9 "Mandatory push at start of polling".)
+
+**Window 2 — Pre-anchor (T-30 → scheduled departure (B) or scheduled arrival (A)):**
+- Platform assigned (null → value) — urgent
+- Platform changed (value → different value) — urgent
+- Delay change ≥**2 min** at the anchor — high
+- Cancellation — urgent
+- Replacement service — urgent
+
+**Window 3 — In-transit / approach (after departure (B) or pre-arrival (A)):**
+- Arrival platform assigned at `To:` — urgent
+- Arrival platform changed at `To:` — urgent
+- Downstream delay propagating to `To:` ≥**5 min** — high
+- Train terminating before `To:` ("shorter than booked") — urgent
+- Rerouting / splitting affecting `To:` — urgent
+- Cancellation — urgent
+- Replacement service — urgent
+
+**Window 4 — Tracking end:**
+- Arrival at `To:` (or anchor for Mode A) — terminal default-priority push, ends tracking
+- Past arrival grace with no data — terminal "tracking lost" push
+
+**Mode applicability matrix:** every event in Windows 1, 3, and 4 applies to both modes. Window 2 differs only in *which* station the "platform"/"delay" applies to: in Mode B it's the user's `From:` (departure-platform-related); in Mode A it's the user's `To:` (arrival-platform-related). The thresholds and priorities are identical.
+
+**Critical-event override (§6):** cancellation, full route disruption, terminating short, replacement bus → always send via every available channel regardless of the user's stored preference.
+
+**Suppression by default:** silence is the norm. The vast majority of polls produce no push. See "Suppression" below.
+
 ### Diff-based push
 
 Every poll produces a `TrainState` snapshot:
@@ -590,16 +623,19 @@ Every poll produces a `TrainState` snapshot:
 
 Push fires when diffing previous vs current snapshot reveals one of:
 
-| Change | Threshold | Priority |
-|---|---|---|
-| `platform` null → value | any | urgent |
-| `platform` value → different value | any | urgent |
-| `delayMinutes` change | ≥2 min pre-departure, ≥5 min in-transit | high |
-| `status` → cancelled | any | urgent |
-| `status` → replaced | any | urgent |
-| `status` → arrived (Mode A or at `To:` in Mode B) | terminal | default |
-| Downstream stop's delay propagating to `To:` arrival | ≥5 min | high |
-| Train terminating before `To:` | any | urgent |
+| Change | Threshold | Priority | Modes |
+|---|---|---|---|
+| Platform null → value at anchor (`From:` for B, `To:` for A) | any | urgent | A, B |
+| Platform value → different value at anchor | any | urgent | A, B |
+| `delayMinutes` change at anchor | ≥2 min pre-anchor, ≥5 min in-transit | high | A, B |
+| `status` → cancelled | any | urgent | A, B |
+| `status` → replaced | any | urgent | A, B |
+| `status` → arrived (terminal) | terminal | default | A, B |
+| Arrival platform at `To:` null → value (Mode B post-departure) | any | urgent | B |
+| Arrival platform at `To:` changed (Mode B post-departure) | any | urgent | B |
+| Downstream delay propagating to `To:` arrival | ≥5 min | high | B |
+| Train terminating before `To:` (or before anchor for Mode A) | any | urgent | A, B |
+| Rerouting / mid-route split affecting `To:` | any | urgent | A, B |
 
 ### Suppression
 
