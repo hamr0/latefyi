@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { parse } from '../src/parse.js';
 import { resolve } from '../src/resolve.js';
 import { schedule, isDue, activate } from '../src/schedule.js';
+import { tick } from '../src/poll-runner.js';
 
 // Same ICE 145 fixture as resolve.test.js
 const ICE145_TRIP = {
@@ -99,4 +100,44 @@ test('email → parse → resolve → schedule → wake-style activate', async (
   assert.equal(onDisk.resolved.tripId, 'TRIP_ICE145');
   assert.equal(onDisk.resolved.endpoint, 'oebb');
   assert.deepEqual(onDisk.resolved.route, ['Amsterdam Centraal', 'Hannover Hbf', 'Berlin Ostbahnhof']);
+});
+
+// Full end-to-end: email → parse → resolve → schedule → activate → tick (Phase 3)
+// produces tracking_started in logs/push.jsonl. Uses the same fake client.
+test('email → parse → resolve → schedule → activate → tick → push log', async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), 'latefyi-e2e-'));
+  const logDir   = mkdtempSync(join(tmpdir(), 'latefyi-e2e-log-'));
+
+  const email = {
+    from: 'amr@example.com',
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof',
+    body: '',
+    msgid: '<e2e@late.fyi>',
+    headers: {},
+  };
+  const parsed = parse(email);
+  const resolved = await resolve({ parsed, primaryClient: fakeOebb() });
+  const rec = schedule({ msgid: email.msgid, sender: email.from, parsed, resolved, stateDir });
+
+  // wake.sh equivalent: activate the pending file at T-30
+  const t30 = new Date('2026-04-29T07:30:00Z').getTime();
+  assert.equal(isDue(rec, t30), true);
+  activate(rec._path, stateDir);
+
+  // poll-runner tick at T-30 — should fire tracking_started
+  const summary = await tick({
+    stateDir, logDir,
+    getClient: () => fakeOebb(),
+    now: t30,
+  });
+  assert.equal(summary.polled, 1);
+  assert.equal(summary.events, 1);
+
+  const pushLog = readFileSync(join(logDir, 'push.jsonl'), 'utf8').split('\n').filter(Boolean);
+  assert.equal(pushLog.length, 1);
+  const evt = JSON.parse(pushLog[0]);
+  assert.equal(evt.type, 'tracking_started');
+  assert.equal(evt.trainNum, 'ICE145');
+  assert.equal(evt.msgid, '<e2e@late.fyi>');
 });

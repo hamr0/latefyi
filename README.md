@@ -47,7 +47,7 @@ Full grammar and reply behaviors: see [PRD §4 and §7](docs/01-product/latefyi-
 | 0 | POC: validate ÖBB universal HAFAS gateway, prove diff loop on real train | ✅ Done — ICE 145 Amsterdam→Berlin tracked end-to-end overnight, 0 errors |
 | 1 | `parse.js`, `stations.js`, `resolve.js` (offline) | ✅ Done — 58 tests |
 | 2 | `users.js`, `schedule.js`, `wake.sh` (state + scheduler) | ✅ Done — 25 tests, integration verified |
-| 3 | `poll.js`, `diff.js`, `poll-runner.js` (live polling daemon) | ⏳ Next |
+| 3 | `diff.js`, `poll.js`, `poll-runner.js` (live polling daemon) | ✅ Done — 51 tests, full email→push.jsonl chain integration-verified |
 | 4 | `reply.js` + email channel (full default UX) | ⏳ |
 | 5 | Cloudflare Email Worker + DNS (production ingest) | ⏳ |
 | 6 | ntfy opt-in flow + QR | ⏳ |

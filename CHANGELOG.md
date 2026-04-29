@@ -10,6 +10,13 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Implementation: 0.3.0 — Phase 3 (2026-04-29)
+- `src/diff.js` — pure `(prev, curr) → PushEvent[]` implementing PRD §9 + the unified taxonomy. Mode-aware anchor (dep for B, arr for A). 22 tests covering all event types and suppression boundaries.
+- `src/poll.js` — single-train poll cycle: builds `TrainState` from a hafas-client trip, runs `diff`, returns updated record. Exports `computePhase`, `pollIntervalMs`, `shouldPollNow`, `isTerminal` for the runner. Handles 6-consecutive-failure tracking-lost semantics. 19 tests.
+- `src/poll-runner.js` — daemon driver. `tick()` (one-pass, testable) + `run()` (loop forever) + CLI entry. Reads `state/active/*.json`, polls each at the right cadence, atomic-writes back, appends events to `logs/push.jsonl`, moves terminal records to `state/done/`. Malformed JSON → `state/errors/`. Dependency-injected client. 8 tests.
+- `tests/integration-pipeline.test.js` extended: end-to-end email → parse → resolve → schedule → activate → **tick** → push.jsonl, all in one test. The full Phase 1+2+3 chain now closes.
+- 51 new tests; **135/135 passing total**.
+
 ### PRD 1.3.0-draft
 - **§5 Modes** — Mode A event coverage clarified to match Mode B (platform changes, terminating short, rerouting now apply to pickup mode too, anchored on the arrival station).
 - **§9 Diff table** — added a "Modes" column making per-mode applicability explicit. Replaced ambiguous "platform" with anchor-aware language.
