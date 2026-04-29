@@ -23,22 +23,10 @@ Updates by email starting T-30 at 09:30.
 
 Then silence — until the platform is announced, the train is delayed, cancelled, or arrives.
 
-## Multi-leg trip?
-
-Tag each train with the same `Trip:` name and stop them all in one go.
-
-```
-To:      ICE145@late.fyi
-Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof
-         Trip: berlin-weekend
-```
-
-Reply `STOP TRIP berlin-weekend` to cancel the whole chain.
-
-## To stop one train
+## To stop
 
 Reply `STOP` to any update.
 
 ---
 
-[How it works](docs/01-product/latefyi-prd.md) · [Apache 2.0](LICENSE)
+[Apache 2.0](LICENSE)
