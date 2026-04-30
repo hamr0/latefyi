@@ -10,6 +10,9 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### `missingContextReply` documents all subject options
+- The "I don't know what you need" reply now surfaces the full subject grammar in a structured layout: pickup vs boarding modes, plus optional `On:`, `Trip:`, `Channels:` with a combined example. Previously only `From:` / `To:` were mentioned. This is the canonical teaching reply — when a sender is confused, they see the whole UX, not just half.
+
 ### Feedback channel + reply-footer redesign + worker hardening
 - `feedback@late.fyi` is now forwarded to the operator's inbox via a Cloudflare Email Routing custom rule (verified destination + literal-match rule, ordered before the catch-all so it never reaches the Worker).
 - `worker/index.js` now declares `NON_TRACKING_LOCALPARTS` (`feedback`, `postmaster`, `abuse`, `admin`, `hostmaster`, `webmaster`, `security`, `noreply`, `no-reply`, `mailer-daemon`) and silently drops mail to those before any allowlist check or ingest forward. Defense-in-depth: if a CF routing rule is missing or misordered, we don't reply with a "not a valid train number" error to legitimate non-tracking mail.
