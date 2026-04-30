@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>late.fyi — track European trains by email</title>
+<meta name="description" content="Email-driven European rail tracker. Quiet by default, loud when it matters.">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --board: #11141a;
+    --board-rule: #1d2230;
+    --amber: #ffb454;
+    --green: #5dd383;
+    --red: #ff6b6b;
+    --muted: #6b7280;
+    --fg: #e6e8eb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    font: 16px/1.55 ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    min-height: 100vh;
+    padding: 2.5rem 1rem 3rem;
+  }
+  .wrap { max-width: 56rem; margin: 0 auto; }
+
+  .brand {
+    display: flex; align-items: baseline; gap: 0.7rem;
+    margin-bottom: 2rem;
+  }
+  .brand .name { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
+  .brand .name span { color: var(--amber); }
+  .brand .sub { color: var(--muted); font-size: 0.9rem; }
+
+  h1 {
+    font-size: clamp(1.6rem, 4.5vw, 2.6rem);
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    color: var(--fg);
+    margin-bottom: 0.6rem;
+    font-weight: 700;
+  }
+  h1 .late { color: var(--amber); }
+  .lead { color: var(--muted); margin-bottom: 2.2rem; max-width: 38rem; }
+
+  /* ---- departure board ---- */
+  .board {
+    background: var(--board);
+    border: 1px solid var(--board-rule);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .board .row {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr 1fr 6rem 7rem;
+    gap: 0.75rem;
+    padding: 0.75rem 1.1rem;
+    border-bottom: 1px solid var(--board-rule);
+    align-items: center;
+    font-size: 0.92rem;
+  }
+  .board .row.header {
+    background: rgba(255,180,84,0.06);
+    color: var(--amber);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    font-weight: 700;
+  }
+  .board .row:last-child { border-bottom: 0; }
+  .board .train { color: var(--fg); font-weight: 600; }
+  .board .from, .board .to { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .board .platform { color: var(--amber); font-weight: 700; }
+  .board .status { font-weight: 600; }
+  .status.ontime  { color: var(--green); }
+  .status.delay   { color: var(--amber); }
+  .status.cancel  { color: var(--red); }
+  .blink { animation: blink 1.4s steps(2,start) infinite; }
+  @keyframes blink { to { opacity: 0.35; } }
+
+  @media (max-width: 700px) {
+    .board .row { grid-template-columns: 4rem 1fr 4rem 5rem; gap: 0.5rem; font-size: 0.82rem; padding: 0.6rem 0.7rem; }
+    .board .row .to { display: none; }
+  }
+
+  /* ---- how it works ---- */
+  section { margin-top: 3rem; }
+  section h2 {
+    color: var(--amber);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-bottom: 0.9rem;
+  }
+  pre {
+    background: var(--board);
+    border: 1px solid var(--board-rule);
+    border-left: 3px solid var(--amber);
+    padding: 0.85rem 1.1rem;
+    border-radius: 6px;
+    font-size: 0.86rem;
+    color: var(--fg);
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+  @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+
+  footer {
+    margin-top: 3rem; padding-top: 1.4rem;
+    border-top: 1px solid var(--board-rule);
+    color: var(--muted); font-size: 0.82rem;
+  }
+  a { color: var(--amber); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<div class="brand">
+  <div class="name">late<span>.</span>fyi</div>
+  <div class="sub">European rail tracker · email-driven</div>
+</div>
+
+<h1>Your train is <span class="late">late</span>, FYI.</h1>
+<p class="lead">Email a train number. Get told when something changes — platforms, delays, cancellations, arrival. Quiet on time.</p>
+
+<div class="board" aria-label="Sample departure board">
+  <div class="row header">
+    <div>Train</div><div>From</div><div>To</div><div>Plat</div><div>Status</div>
+  </div>
+  <div class="row">
+    <div class="train">ICE 145</div>
+    <div class="from">Amsterdam C.</div>
+    <div class="to">Berlin Ost.</div>
+    <div class="platform">7</div>
+    <div class="status ontime">ON TIME</div>
+  </div>
+  <div class="row">
+    <div class="train">TGV 6611</div>
+    <div class="from">Paris Lyon</div>
+    <div class="to">Lyon P.D.</div>
+    <div class="platform blink">14</div>
+    <div class="status delay">+8 MIN</div>
+  </div>
+  <div class="row">
+    <div class="train">EUR 9316</div>
+    <div class="from">London St.P.</div>
+    <div class="to">Amsterdam C.</div>
+    <div class="platform">—</div>
+    <div class="status delay">PLAT TBD</div>
+  </div>
+  <div class="row">
+    <div class="train">RJ 73</div>
+    <div class="from">Wien Hbf</div>
+    <div class="to">Zürich HB</div>
+    <div class="platform">—</div>
+    <div class="status cancel">CANCELLED</div>
+  </div>
+</div>
+
+<section>
+  <h2>Send this</h2>
+<pre>To:      ICE145@late.fyi
+Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof</pre>
+
+  <div class="grid2">
+    <div>
+      <h2 style="margin-top:1.2rem">Reply (in seconds)</h2>
+<pre>Tracking ICE 145.
+dep 10:00 → arr 16:02.
+Updates start T-30.</pre>
+    </div>
+    <div>
+      <h2 style="margin-top:1.2rem">To stop</h2>
+<pre>Reply STOP
+to any update.</pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What we don't do</h2>
+<pre>No accounts. No analytics. No ads. No third parties.
+Your address is kept only while a train is being tracked,
+so we can reply. After arrival or STOP it moves to a
+diagnostic log we prune periodically.
+
+Open source. Auditable end-to-end.</pre>
+</section>
+
+<footer>
+  Open source · Apache 2.0 · <a href="https://github.com/hamr0/latefyi">github.com/hamr0/latefyi</a>
+</footer>
+
+</div>
+
+</body>
+</html>
