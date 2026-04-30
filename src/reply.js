@@ -83,10 +83,19 @@ export function missingContextReply({ trainNum, sender, incomingMsgid, ourMsgid 
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
     body:
-      `Got ${trainNum} but I don't know what you need.\n` +
-      `- Reply with \`To: <station>\` if you're picking someone up at that station.\n` +
-      `- Reply with \`From: <station>\` (and optionally \`To: <station>\`) if you're boarding.\n\n` +
-      `Example: From: Amsterdam, To: Berlin Ostbahnhof`,
+      `Got ${trainNum} but I don't know what you need. Resend with one of:\n\n` +
+      `Picking someone up:\n` +
+      `  Subject: To: <station>\n\n` +
+      `Boarding:\n` +
+      `  Subject: From: <station>, To: <station>\n` +
+      `  (just From: works too — we'll track to the train's terminus)\n\n` +
+      `Optional headers (combine freely, comma-separated, in subject):\n` +
+      `  On: 2026-05-04         travelling later (ISO date or "5 May 2026", up to 90 days ahead)\n` +
+      `  Trip: <name>           tag for grouping; STOP TRIP <name> tears the chain down\n` +
+      `  Channels: ntfy|both    one-shot delivery override\n\n` +
+      `Example:\n` +
+      `  Subject: From: Amsterdam, To: Berlin Ostbahnhof, On: 2026-05-04, Trip: berlin-weekend\n\n` +
+      `Headers are case-insensitive and can also go in the body's first non-empty line.`,
   });
 }
 

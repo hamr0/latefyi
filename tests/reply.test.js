@@ -90,11 +90,14 @@ test('confirmation: subject contains route', () => {
 
 // ===== error templates =====
 
-test('missing context: hints at From/To headers + example', () => {
+test('missing context: surfaces all syntax options + example', () => {
   const r = missingContextReply({ trainNum: 'ICE145', sender: 'a@b' });
   assert.match(r.subject, /Need more info for ICE145/);
   assert.match(r.body, /From:/);
   assert.match(r.body, /To:/);
+  assert.match(r.body, /On:/);
+  assert.match(r.body, /Trip:/);
+  assert.match(r.body, /Channels:/);
   assert.match(r.body, /Example:/);
 });
 
