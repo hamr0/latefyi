@@ -58,17 +58,17 @@ test('confirmation: mentions email delivery starting T-30', () => {
   assert.match(r.body, /Updates by email starting T-30/);
 });
 
-test('confirmation: includes one-click mailto stop link with train number', () => {
+test('confirmation: mailto stop link sets both subject and body to STOP <TRAIN>', () => {
   const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', trainNum: 'EUR9316' });
-  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20EUR9316/);
+  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20EUR9316&body=STOP%20EUR9316/);
   assert.match(r.body, /Stop tracking this train/);
 });
 
-test('confirmation: with trip adds a second mailto for STOP TRIP', () => {
+test('confirmation: with trip adds a second mailto for STOP TRIP (subject+body)', () => {
   const resolved = { ...sampleResolved(), trip: 'berlin-weekend' };
   const r = confirmationReply({ resolved, sender: 'a@b', trainNum: 'EUR9316' });
-  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20EUR9316/);
-  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20TRIP%20berlin-weekend/);
+  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20EUR9316&body=STOP%20EUR9316/);
+  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20TRIP%20berlin-weekend&body=STOP%20TRIP%20berlin-weekend/);
   assert.match(r.body, /Stop the whole trip \(berlin-weekend\)/);
 });
 

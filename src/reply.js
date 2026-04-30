@@ -30,18 +30,24 @@ function withFooter(body) {
 
 // One-click stop links. Mail clients render bare `mailto:` URIs as tappable
 // links; clicking opens a fresh compose with `Subject: STOP <TRAIN>` already
-// filled, which the parser handles deterministically. This is the canonical
-// way to stop — replying STOP to a confirmation is intentionally not parsed
-// (attribution lines and quoted-content boundaries make it unreliable).
+// filled, which the parser handles deterministically. The `body=` parameter
+// is belt-and-suspenders: some clients (notably Outlook.com web with browser-
+// handled mailto) silently drop `?subject=` during handoff to the compose
+// window. Including STOP in body too means the parser still catches it via
+// the first-non-empty-body-line path that headerSource() folds into headerSrc.
 function stopLinks(trainNum, trip) {
   const lines = [];
   if (trainNum) {
+    const cmd = `STOP ${trainNum}`;
+    const enc = encodeURIComponent(cmd);
     lines.push(`Stop tracking this train:`);
-    lines.push(`  mailto:stop@${DOMAIN}?subject=STOP%20${trainNum}`);
+    lines.push(`  mailto:stop@${DOMAIN}?subject=${enc}&body=${enc}`);
   }
   if (trip) {
+    const cmd = `STOP TRIP ${trip}`;
+    const enc = encodeURIComponent(cmd);
     lines.push(`Stop the whole trip (${trip}):`);
-    lines.push(`  mailto:stop@${DOMAIN}?subject=STOP%20TRIP%20${encodeURIComponent(trip)}`);
+    lines.push(`  mailto:stop@${DOMAIN}?subject=${enc}&body=${enc}`);
   }
   return lines.join('\n');
 }
