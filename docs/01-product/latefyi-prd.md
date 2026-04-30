@@ -1,6 +1,6 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.9.0
+**Version:** 1.10.0
 **Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone. Privacy contract is literal: trip ends → address AND record both deleted, no archive. Disambiguation completion (numbered/named replies) wired end-to-end with `Reply-To` threading. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. **Operator metrics**: daily snapshot (`scripts/stats.sh`) + weekly digest email (`scripts/stats-email.sh`) — aggregate counters only, no per-user/per-trip detail. 239/239 tests pass.
 
 **Deferred in v1.9.0 — ntfy push notifications.** The full code path (per-user derived topic, opt-in QR/deep-link reply, push transport, fail-streak counter) is intact, but no longer surfaced in user-facing copy. Real-world testing showed that even with the designed onboarding (`CHANNELS ntfy` → reply with `ntfy://subscribe/<topic>` deep link + `https://ntfy.sh/<topic>` fallback), the deep link is dead on a fresh device (no ntfy app registered for the scheme) and the HTTPS fallback drops users into a no-push browser tab. "No extra setup, ever" is not honest until we either (a) ship a hosted PWA that owns the scheme + handles web push, or (b) replace ntfy with first-party web push. Until then: `config@late.fyi` accepts `CHANNELS ntfy` but replies "ntfy delivery is paused" and pins the user to email; confirmation/missing-context bodies omit any ntfy/CHANNELS mention.
@@ -285,18 +285,33 @@ Stops are triggered by a fresh email to `stop@late.fyi` (or any `<TRAINNUM>@late
 | `Subject: STOP ALL` to `stop@late.fyi` | Stops every active tracking for the sender. |
 | `Subject: STOP` to `<TRAINNUM>@late.fyi` | Bare STOP at a train-number address resolves to that train. |
 
-### Confirmation (happy path, default email channel)
+### Confirmation (happy path, email — ntfy paused per §6 banner)
 
 ```
+From: latefyi <RE19750@late.fyi>
 Subject: Tracking RE19750 — Amiens → Lille Flanders
 
 Tracking RE19750 (TER, SNCF), Amiens → Lille Flanders.
 Scheduled: dep 14:02 Amiens, arr 14:38 Lille Flanders.
+Departure platform: TBC    Arrival platform: TBC
+Status: TBC
 Updates by email starting T-30 at 13:32.
-Reply CHANNELS ntfy or CHANNELS both to switch delivery.
+
+Stop tracking this train:
+  mailto:stop@late.fyi?subject=STOP%20RE19750&body=STOP%20RE19750
 
 [FOOTER]
 ```
+
+**`From:` is meaningful.** Per-template routable local-parts:
+- confirmations + per-train updates: `latefyi <<TRAINNUM>@late.fyi>`
+- stop confirmations: `latefyi <stop@late.fyi>`
+- config replies: `latefyi <config@late.fyi>`
+- error / help / rate-limit / unauthorized: `latefyi <help@late.fyi>`
+
+The display name `latefyi` keeps the inbox sender clean. Critical: `noreply@` is **not used** as From: — clients that ignore Reply-To (Gmail, others) reply to From: directly, and the Cloudflare worker drops `noreply@` via `NON_TRACKING_LOCALPARTS`. Routable From: locals make Reply-STOP work as a silent fallback on top of the canonical mailto path.
+
+**Platform + Status fields use `TBC`** when not yet known (always at confirmation time for trips ≥1 day out). Operators don't assign platforms until ~30 min before departure; HAFAS doesn't surface real-time delay/status until the train is in service. Showing the fields with `TBC` placeholders in the confirmation sets the expectation of what will be filled later, rather than implying these are missing concepts.
 
 ### Confirmation (user opted in to ntfy)
 

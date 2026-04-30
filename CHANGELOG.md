@@ -10,6 +10,26 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Routable From: address + display name (PRD 1.10.0 / impl 0.10.0)
+- Outbound replies now use `latefyi <<routable-local>@late.fyi>` instead of `noreply@late.fyi`. The local-part is meaningful per template — confirmations and per-train updates use `<TRAINNUM>@`, stop confirmations use `stop@`, config replies use `config@`, error/help replies use `help@`. Display name `latefyi` keeps the inbox sender clean.
+- **Real bug behind "reply STOP doesn't work":** Gmail and others use the `From:` address (not `Reply-To:`) when you hit Reply on a confirmation. Replies were going to `noreply@late.fyi`, which the Cloudflare worker drops via `NON_TRACKING_LOCALPARTS` (defense against worker→worker loops) — silent disappearance, no log on our side. The new From: locals are all routable through the worker, so Reply now lands at the parser. `Reply-To:` retained as belt-and-suspenders for clients that honor it.
+
+### Stop UX — one-click mailto links
+- Every confirmation and update email now includes a `mailto:` link: `Stop tracking this train → mailto:stop@late.fyi?subject=STOP%20<TRAIN>&body=STOP%20<TRAIN>`. Tap it, your client opens a fresh compose with subject + body pre-filled, hit send. No reply parsing, no client-specific quirks. The `body=` parameter is belt-and-suspenders for clients (notably Outlook.com web with browser-handled mailto) that silently drop `?subject=`.
+- Confirmations with a `Trip:` tag include a second link: `Stop the whole trip (<name>)`.
+- Reply-STOP retained as a silent fallback (works for top-posted `STOP` / `STOP <TRAIN>` / `STOP TRIP <name>` / `STOP ALL`); mailto is the only advertised path.
+
+### Confirmation expectations: platform + status fields
+- Confirmation reply now surfaces `Departure platform`, `Arrival platform`, and `Status`. Values render as `TBC` until polling fills them at T-30. Sets the expectation that operator-assigned platforms and live status arrive close to departure, not at booking time.
+
+### Bug fix — tryParseStop multi-line regex
+- `tryParseStop` regex `/^STOP\b\s*(.*)$/i` failed whenever the input contained a newline (subject + body folded together, or any body with a signature line). JS `.` doesn't match `\n` and `$` is end-of-string, so the regex couldn't reach `$` past the newline → silent unrecognized error. Manifested as `STOP EUR9316` in subject + a Thunderbird `-- Ciao` signature returning `stop_unrecognized`. Now operates on the first non-empty line only. Regression test added.
+
+### ntfy push — deferred (PRD 1.9.0)
+- Real-world testing showed the designed onboarding (`CHANNELS ntfy` → reply with `ntfy://subscribe/<topic>` deep link + HTTPS fallback) breaks for fresh users: the deep link is dead without the ntfy app pre-installed, and the fallback drops users into a no-push browser tab. "No extra setup, ever" wasn't honest until we ship a hosted PWA or first-party web push.
+- Surfaced as **paused** in user-facing copy: `confirmationReply` and `missingContextReply` strip ntfy/CHANNELS mentions; `config@` accepts `CHANNELS ntfy|both` but replies "ntfy delivery is paused" and pins the user to email. Existing user records with `channel:'ntfy'` are forced to email at the `dispatch` site so they don't fall into a silent void.
+- All code paths intact — derived per-user topic, opt-in QR/deep-link reply, push transport, ntfy fail-streak counter — for clean re-enable. One-line revert in `poll-runner.js` plus copy restoration in three reply templates.
+
 ### Forgiving subject parser
 - Colons and commas are now optional. The parser splits on keyword boundaries (`from` / `to` / `on` / `trip` / `channels`) and captures values lazily up to the next keyword, comma, or end of line.
 - **Bare dates auto-detected.** If no `on` keyword is present, an ISO `2026-05-04` or named-month (`5 May 2026`) date anywhere in the subject is auto-tagged as the `on` value. Two-pass extraction: a bare date that would otherwise be swallowed into the `to:` value is recovered. All of these work:
