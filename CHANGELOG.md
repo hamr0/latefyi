@@ -10,6 +10,18 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Feedback channel + reply-footer redesign + worker hardening
+- `feedback@late.fyi` is now forwarded to the operator's inbox via a Cloudflare Email Routing custom rule (verified destination + literal-match rule, ordered before the catch-all so it never reaches the Worker).
+- `worker/index.js` now declares `NON_TRACKING_LOCALPARTS` (`feedback`, `postmaster`, `abuse`, `admin`, `hostmaster`, `webmaster`, `security`, `noreply`, `no-reply`, `mailer-daemon`) and silently drops mail to those before any allowlist check or ingest forward. Defense-in-depth: if a CF routing rule is missing or misordered, we don't reply with a "not a valid train number" error to legitimate non-tracking mail.
+- Reply `FOOTER` slimmed to identity + feedback + privacy claim:
+  ```
+  — late.fyi
+  feedback@late.fyi | we don't store your email past notifications or STOP
+  ```
+  Format help (subject syntax, optional headers, STOP variants) lives in `missingContextReply` where it actually teaches a confused user. Confirmation/update emails no longer carry instructions for users who already used the system correctly.
+- Landing page (`web/index.html`) — added "Travelling later?" section showing the `On: <date>` form, plus `feedback@late.fyi` mailto link in the footer.
+- Tests adjusted; 233/233 still pass.
+
 ### Phase 7: deliverability + abuse limits + advance planning
 - **Deliverability** — SPF (added VPS IP `155.94.144.191`), DKIM (selector `latefyi2026`, opendkim signing-table entry, public key TXT at `latefyi2026._domainkey.late.fyi`), DMARC (`_dmarc.late.fyi`, `p=none` monitoring). Verified via direct send to Gmail: SPF=PASS, DKIM=PASS, DMARC=PASS.
 - **Abuse limits** — `users.js` `checkRateLimit()` + `recordRequest()` (pure, with bounded 24h timestamp array per user), wired into `server.js handleTrack`. Defaults: 10 fresh requests/hour, 50/day, 20 active trains/sender. Two new reply templates: `rateLimitedReply` (with retry time), `tooManyActiveReply` (suggests STOP). Failed resolves don't count against the budget.

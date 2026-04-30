@@ -1,7 +1,7 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.7.0
-**Status:** Phases 1–6 live at `late.fyi`. Phase 7 partially shipped: deliverability (SPF/DKIM/DMARC verified PASS to Gmail), abuse limits (10/hr, 50/day, 20 active per sender), and `On: <date>` advance planning (up to 90 days). 233/233 tests pass. Privacy guarantee enforced: plaintext sender scrubbed on terminal. Landing page live at `late.fyi` via Cloudflare Pages. Allowlist still single-tenant for the moment — broaden once 30-day soak confirms abuse limits hold.
+**Version:** 1.7.1
+**Status:** Phases 1–6 live at `late.fyi`. Phase 7 mostly shipped: deliverability (SPF/DKIM/DMARC verified PASS to Gmail), abuse limits (10/hr, 50/day, 20 active per sender), `On: <date>` advance planning (up to 90 days), `feedback@late.fyi` forwarded to operator, worker drops reserved local-parts (feedback/postmaster/etc.) defensively. 233/233 tests pass. Privacy guarantee enforced: plaintext sender scrubbed on terminal. Reply footer slimmed to identity + feedback + privacy claim; format help lives in `missingContextReply`. Landing page live at `late.fyi` via Cloudflare Pages. Allowlist still single-tenant for now — broaden once 30-day soak confirms abuse limits hold.
 
 See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr

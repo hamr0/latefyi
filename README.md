@@ -31,4 +31,4 @@ Reply `STOP` to any update.
 
 ---
 
-[Apache 2.0](LICENSE)
+Feedback: feedback@late.fyi · [Apache 2.0](LICENSE)
