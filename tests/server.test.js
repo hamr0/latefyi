@@ -52,7 +52,7 @@ const fakeOebb = () => ({
 
 function setup() {
   const stateDir = mkdtempSync(join(tmpdir(), 'latefyi-server-'));
-  for (const sub of ['active', 'pending', 'done', 'errors', 'users']) {
+  for (const sub of ['active', 'pending', 'pending-disambig', 'users']) {
     mkdirSync(join(stateDir, sub), { recursive: true });
   }
   return { stateDir };
@@ -209,7 +209,7 @@ test('stop ALL: clears all this sender\'s active+pending records', async () => {
   assert.match(r.subject, /Stopped all tracking/);
   assert.match(r.body, /Cleared 3 active trains/);
   assert.deepEqual(readdirSync(join(stateDir, 'pending')), []);
-  assert.equal(readdirSync(join(stateDir, 'done')).length, 3);
+  // STOP deletes the records — nothing per-trip is retained anywhere.
 });
 
 test('stop TRIP: only the matching trip is cleared', async () => {
@@ -251,7 +251,7 @@ test('stop single: STOP <TRAINNUM> moves only that one', async () => {
   assert.deepEqual(readdirSync(join(stateDir, 'pending')), []);
 });
 
-test('STOP scrubs plaintext sender from done record (privacy claim)', async () => {
+test('STOP deletes the record entirely (privacy claim — no per-trip retention)', async () => {
   const { stateDir } = setup();
   await handleInbound({
     email: baseEmail({ msgid: '<a@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
@@ -261,13 +261,11 @@ test('STOP scrubs plaintext sender from done record (privacy claim)', async () =
     email: baseEmail({ to: 'stop@late.fyi', subject: 'STOP ICE145' }),
     stateDir, primaryClient: fakeOebb(),
   });
-  const doneFiles = readdirSync(join(stateDir, 'done')).filter(f => f.endsWith('.json'));
-  assert.equal(doneFiles.length, 1);
-  const rec = JSON.parse(readFileSync(join(stateDir, 'done', doneFiles[0]), 'utf8'));
-  assert.equal(rec.sender, undefined, 'plaintext sender must not survive in done/');
-  assert.match(rec.senderHash, /^[a-f0-9]{16}$/);
-  // Other fields should still be there for diagnostics.
-  assert.equal(rec.request.trainNum, 'ICE145');
+  // Nothing in pending/active/done — record is gone. The user file
+  // (state/users/<hash>.json) keeps a passive counter and channel pref;
+  // that's the only thing that survives.
+  assert.deepEqual(readdirSync(join(stateDir, 'pending')), []);
+  assert.deepEqual(readdirSync(join(stateDir, 'active')), []);
 });
 
 // ===== Abuse limits =====
@@ -331,4 +329,93 @@ test('active cap: sender at max gets tooManyActiveReply', async () => {
   });
   assert.match(r.subject, /Too many active trains/);
   assert.match(r.body, /STOP/);
+});
+
+// ===== Disambiguation reply completion =====
+
+const AMBIGUOUS_TRIP = {
+  line: { name: 'EUR 9316', fahrtNr: '9316' },
+  stopovers: [
+    { stop: { name: 'Brussels Midi' },     plannedDeparture: '2026-04-29T08:00:00Z', plannedDeparturePlatform: '1' },
+    { stop: { name: 'Brussels Nord' },     plannedArrival:   '2026-04-29T08:05:00Z' },
+    { stop: { name: 'Amsterdam Centraal' }, plannedArrival:   '2026-04-29T11:30:00Z', plannedArrivalPlatform: '4' },
+  ],
+};
+
+const ambiguousOebb = () => ({
+  async locations() { return [{ id: 'BRU', name: 'Brussels Midi', type: 'station' }]; },
+  async departures() {
+    return [{
+      line: { name: 'EUR 9316', fahrtNr: '9316' }, direction: 'Amsterdam', tripId: 'TRIP_EUR9316',
+      plannedWhen: '2026-04-29T08:00:00Z', plannedPlatform: '1',
+    }];
+  },
+  async arrivals() { return []; },
+  async trip(id) {
+    if (id === 'TRIP_EUR9316') return AMBIGUOUS_TRIP;
+    throw new Error(`unknown ${id}`);
+  },
+});
+
+test('disambig: ambiguous From: parks state and replies with numbered list', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({ to: 'EUR9316@late.fyi', msgid: '<inb-1@x>', subject: 'From: Brussels, To: Amsterdam Centraal' }),
+    stateDir, primaryClient: ambiguousOebb(),
+  });
+  assert.match(r.body, /Brussels Midi/);
+  assert.equal(readdirSync(join(stateDir, 'pending-disambig')).length, 1);
+});
+
+test('disambig: digit reply resolves and schedules', async () => {
+  const { stateDir } = setup();
+  const r1 = await handleInbound({
+    email: baseEmail({ to: 'EUR9316@late.fyi', msgid: '<inb-1@x>', subject: 'From: Brussels, To: Amsterdam Centraal' }),
+    stateDir, primaryClient: ambiguousOebb(),
+  });
+  const ourMsgid = r1.headers['Message-ID'];
+  assert.ok(ourMsgid);
+
+  const r2 = await handleInbound({
+    email: baseEmail({
+      to: 'EUR9316@late.fyi', msgid: '<inb-2@x>',
+      body: '1', subject: '',
+      headers: { 'in-reply-to': ourMsgid },
+    }),
+    stateDir, primaryClient: ambiguousOebb(),
+  });
+  assert.match(r2.subject, /Tracking/);
+  assert.deepEqual(readdirSync(join(stateDir, 'pending-disambig')), []);
+});
+
+test('disambig: out-of-range digit re-sends the numbered list (state preserved)', async () => {
+  const { stateDir } = setup();
+  const r1 = await handleInbound({
+    email: baseEmail({ to: 'EUR9316@late.fyi', msgid: '<inb-1@x>', subject: 'From: Brussels, To: Amsterdam Centraal' }),
+    stateDir, primaryClient: ambiguousOebb(),
+  });
+  const ourMsgid = r1.headers['Message-ID'];
+  const r2 = await handleInbound({
+    email: baseEmail({
+      to: 'EUR9316@late.fyi', msgid: '<inb-2@x>',
+      body: '99', subject: '',
+      headers: { 'in-reply-to': ourMsgid },
+    }),
+    stateDir, primaryClient: ambiguousOebb(),
+  });
+  assert.match(r2.body, /Brussels Midi/);
+  assert.equal(readdirSync(join(stateDir, 'pending-disambig')).length, 1);
+});
+
+test('disambig: reply with unknown In-Reply-To is silently dropped', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({
+      to: 'ICE145@late.fyi', msgid: '<orphan@x>',
+      body: '2', subject: '',
+      headers: { 'in-reply-to': '<no-such-parent@late.fyi>' },
+    }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.equal(r, null);
 });

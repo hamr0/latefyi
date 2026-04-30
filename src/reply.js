@@ -28,13 +28,19 @@ function withFooter(body) {
   return `${body}\n\n${FOOTER}`;
 }
 
-function reply({ subject, body, to, inReplyTo, references, msgid }) {
+function reply({ subject, body, to, inReplyTo, references, msgid, replyTo }) {
   const headers = {};
   if (inReplyTo) {
     headers['In-Reply-To'] = inReplyTo;
     headers['References'] = references || inReplyTo;
   }
   if (msgid) headers['Message-ID'] = msgid;
+  // Reply-To routes the user's "Reply" back to a local-part the worker will
+  // accept (typically <TRAINNUM>@late.fyi or stop@late.fyi). Without this,
+  // their Reply goes to `noreply@` which the worker drops (defense-in-depth
+  // in NON_TRACKING_LOCALPARTS). Setting Reply-To preserves the threading
+  // UX while keeping noreply@ unreplyable.
+  if (replyTo) headers['Reply-To'] = replyTo;
   return {
     from: FROM_ADDRESS,
     to,
@@ -46,7 +52,7 @@ function reply({ subject, body, to, inReplyTo, references, msgid }) {
 
 // ---- §7: confirmation (happy path) ----
 
-export function confirmationReply({ resolved, sender, channel = 'email', incomingMsgid, ourMsgid }) {
+export function confirmationReply({ resolved, sender, channel = 'email', incomingMsgid, ourMsgid, trainNum }) {
   const line = resolved.line || resolved.trainNum;
   const fromName = resolved.from || '?';
   const toName = resolved.to || '?';
@@ -67,6 +73,7 @@ export function confirmationReply({ resolved, sender, channel = 'email', incomin
     to: sender,
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
+    replyTo: trainNum ? `${trainNum}@${DOMAIN}` : undefined,
     body:
       `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
       `Scheduled: dep ${fmtTime(dep)} ${fromName}, arr ${fmtTime(arr)} ${toName}.\n` +
@@ -145,6 +152,10 @@ export function ambiguousStationReply({ trainNum, line, station, candidates, sen
     to: sender,
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
+    // Reply lands at <TRAINNUM>@late.fyi so the worker (which drops noreply@)
+    // forwards it to ingest, and the parser sees inReplyTo + a body that's
+    // just a digit/name → kind: 'reply'.
+    replyTo: trainNum ? `${trainNum}@${DOMAIN}` : undefined,
     body:
       `"${station}" matches multiple stops on ${line || trainNum}'s route:\n` +
       `${numbered}\n\n` +

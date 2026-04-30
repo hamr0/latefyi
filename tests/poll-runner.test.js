@@ -145,14 +145,9 @@ test('tick: when shouldPollNow allows it and isTerminal, file is moved on the sa
   // detect arrival, and the linger has already expired.
   await tick({ stateDir, logDir, getClient: () => fakeClient({ TRIP_ICE145: tripData }), now: new Date('2026-04-29T14:09:00Z').getTime() });
 
+  // Privacy: terminal records are deleted, not archived. Active is empty,
+  // and no done/ directory survives either.
   assert.deepEqual(readdirSync(join(stateDir, 'active')), []);
-  const doneFiles = readdirSync(join(stateDir, 'done'));
-  assert.equal(doneFiles.length, 1);
-
-  // Privacy: the moved record must not contain the plaintext sender.
-  const doneRec = JSON.parse(readFileSync(join(stateDir, 'done', doneFiles[0]), 'utf8'));
-  assert.equal(doneRec.sender, undefined, 'plaintext sender must not survive in done/');
-  assert.match(doneRec.senderHash, /^[a-f0-9]{16}$/);
 });
 
 test('push.jsonl logs senderHash, never plaintext sender', async () => {
@@ -204,16 +199,15 @@ test('tick: failing client increments consecutivePollFailures, file stays in act
   assert.equal(updated.state.consecutivePollFailures, 1);
 });
 
-test('tick: malformed JSON file moved to errors/', async () => {
+test('tick: malformed JSON file is dropped (logged + deleted, not archived)', async () => {
   const stateDir = mkdtempSync(join(tmpdir(), 'latefyi-runner-'));
   const logDir   = mkdtempSync(join(tmpdir(), 'latefyi-runner-log-'));
-  for (const sub of ['active', 'done', 'errors']) mkdirSync(join(stateDir, sub), { recursive: true });
+  mkdirSync(join(stateDir, 'active'), { recursive: true });
   writeFileSync(join(stateDir, 'active', 'broken.json'), '{ not json');
 
   const summary = await tick({ stateDir, logDir, getClient: () => fakeClient(), now: Date.now() });
   assert.equal(summary.errors, 1);
   assert.deepEqual(readdirSync(join(stateDir, 'active')), []);
-  assert.deepEqual(readdirSync(join(stateDir, 'errors')), ['broken.json']);
 });
 
 // ===== multiple records =====

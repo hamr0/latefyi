@@ -19,14 +19,14 @@ Email-driven European train tracker. User emails `<TRAINNUM>@late.fyi`, gets pus
 ## Conventions
 
 - Vanilla > stdlib > external dep. Only runtime deps: `hafas-client`, `nodemailer`. Tests use node:test.
-- File-based state under `state/{users,pending,active,done,errors}/`. Atomic writes via tmp+rename.
+- File-based state under `state/{users,pending,active,pending-disambig}/`. Atomic writes via tmp+rename. **No `done/` or `errors/`** — terminal records are deleted, not archived.
 - Discriminated unions for parse/resolve outputs (`kind: 'track' | 'stop' | 'config' | 'reply' | 'help' | 'error' | 'resolved' | 'disambiguation_needed'`).
 - Behavior tests, no internal mocking — inject fakes for hafas-client / transport / fetch.
 - No backwards-compat shims, no half-finished implementations. If something's removed, delete it.
 
 ## Privacy invariant (hard requirement)
 
-Plaintext sender lives only in `state/active/`. On terminal (arrival / STOP / cancellation), `scrubSender()` strips it before atomic write to `state/done/`. `push.jsonl` event log uses `senderHash` only. Tests assert "plaintext sender must not survive in done/" — don't break them.
+Plaintext sender lives only in `state/active/<msgid>.json` during active tracking. On terminal (arrival / STOP / cancellation / tracking-lost), the record is `unlinkSync()`'d — no copy, no archive. `push.jsonl` event log uses `senderHash` only. Tests assert active/ becomes empty post-terminal — don't add a `done/` archive without an explicit privacy-policy change.
 
 ## Deliverability is wired
 
@@ -56,4 +56,12 @@ VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `late
 
 ## Phase status
 
-Phases 1–6 + most of Phase 7 (deliverability, abuse limits, `On:` advance planning, feedback channel) are live. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion, then opening the allowlist to anyone.
+Phases 1–7 are shipped and live. Allowlist is **open** to anyone. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
+
+## Reply-To threading
+
+Outbound replies have `From: noreply@late.fyi` (worker drops `noreply@`) and `Reply-To: <TRAINNUM>@late.fyi`. User's "Reply" routes through the worker via the trainnum address. When the parser sees `In-Reply-To` + no headers, it returns `kind: 'reply'` regardless of local-part. That's how disambiguation answers + replies-to-confirmations work.
+
+## Update landing page privacy claim if you change retention
+
+`web/index.html` "What we don't do" section says "your address AND the record are deleted on trip end". If you ever add a `done/` archive (you shouldn't), update the page first.

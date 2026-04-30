@@ -194,18 +194,19 @@ export function parse(email) {
   }
 
   // 3. Replies threaded to a prior outbound (disambiguation, etc.).
-  //    Caller decides if In-Reply-To matches a known pending request.
+  //    A reply is identified by: In-Reply-To present AND no recognized
+  //    headers in subject/body. With recognized headers, the user is
+  //    re-sending a fresh tracking request — fall through to track.
+  //    Local-part doesn't disambiguate (Reply-To routes replies to
+  //    <TRAINNUM>@late.fyi to bypass the worker's noreply@ drop).
   if (inReplyTo) {
-    // Heuristic: a "reply" is a message with In-Reply-To and either an empty
-    // subject/body header surface OR a body that's just an answer (digit/name).
-    // We can't know for sure here — just return the raw answer + inReplyTo and
-    // let the router check pending state.
+    const peekHeaders = extractHeaders(headerSrc);
+    const hasFreshHeaders = !!(peekHeaders.from || peekHeaders.to);
     const answer = firstNonEmptyLine(body) || subject.trim();
-    if (answer && !TRAINNUM_RE.test(localPart.toUpperCase())) {
+    if (answer && !hasFreshHeaders) {
       return { kind: 'reply', inReplyTo, answer };
     }
-    // If the local-part IS a valid train number, treat as a fresh tracking
-    // request (user may have re-sent to the same address). Fall through.
+    // Fresh headers → user re-submitted from scratch; fall through to track.
   }
 
   // 4. Train-number extraction & validation.

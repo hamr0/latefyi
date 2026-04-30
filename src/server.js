@@ -8,13 +8,15 @@
 // dependency-injected, so tests use fakes.
 
 import { randomBytes } from 'node:crypto';
-import { readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from './parse.js';
 import { resolve as resolveTrip } from './resolve.js';
 import { schedule, readPending } from './schedule.js';
+import { parkDisambig, readDisambig, removeDisambig } from './disambig.js';
+import { resolveDisambiguation } from './stations.js';
 import {
-  getOrCreate, setChannel, incrementTrainCount, ntfyTopic, scrubSender,
+  getOrCreate, setChannel, incrementTrainCount, ntfyTopic,
   checkRateLimit, recordRequest, DEFAULT_LIMITS,
 } from './users.js';
 import {
@@ -55,18 +57,12 @@ function findRecordsForSender(stateDir, sender, predicate) {
   return matches;
 }
 
-// Scrub-and-move: read the active record, replace plaintext sender with its
-// hash, write atomically to done/, then unlink active. Privacy claim: no
-// plaintext email survives in done/, ever.
-function moveToDone(matchPath, stateDir, fname) {
-  const dest = join(stateDir, 'done', fname);
-  const rec = JSON.parse(readFileSync(matchPath, 'utf8'));
-  const scrubbed = scrubSender(rec);
-  const tmp = `${dest}.tmp`;
-  writeFileSync(tmp, JSON.stringify(scrubbed, null, 2));
-  renameSync(tmp, dest);
+// Delete the record. Privacy claim: when a trip ends (arrival, STOP,
+// cancellation), nothing per-trip is retained — only the sender's
+// pseudonymous user file (state/users/<hash>.json) keeps a counter and
+// channel preference. Aggregate operator metrics derive from those.
+function dropTerminalRecord(matchPath) {
   unlinkSync(matchPath);
-  return dest;
 }
 
 // ---- handlers ----
@@ -120,11 +116,19 @@ async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackCli
   }
 
   if (r.kind === 'disambiguation_needed') {
-    // Park the partial state and send the numbered reply. The full
-    // §7a "park in AWAITING_DISAMBIGUATION + accept reply" flow ships
-    // in Phase 7 hardening; for now we send the reply, and a re-send
-    // with the chosen station resolves the request fresh.
+    // Park the partial parsed state keyed on our outbound Message-ID, then
+    // send the numbered reply. When the user replies (parser returns
+    // kind: 'reply'), we look up by In-Reply-To and apply the answer.
     const ourMsgid = newMsgid();
+    parkDisambig(stateDir, {
+      ourMsgid,
+      sender: email.from,
+      incomingMsgid: email.msgid,
+      parsed,                  // entire parsed track request, mutated below on resolve
+      ambiguousField: r.field, // 'from' or 'to'
+      candidates: r.candidates,
+      line: r.partial.line || parsed.trainNum,
+    });
     return ambiguousStationReply({
       trainNum: parsed.trainNum, line: r.partial.line || parsed.trainNum,
       station: parsed[r.field],
@@ -145,7 +149,45 @@ async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackCli
 
   return confirmationReply({
     resolved: r, sender: email.from, channel: userRecord.channel,
-    incomingMsgid: email.msgid, ourMsgid,
+    incomingMsgid: email.msgid, ourMsgid, trainNum: parsed.trainNum,
+  });
+}
+
+// User answered an ambiguousStationReply (e.g. "2" or "Brussels Midi").
+// Look up the parked partial state by In-Reply-To, apply the answer,
+// resolve fresh, schedule. Silent drop if no parked state matches.
+async function handleDisambigReply({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now }) {
+  if (!parsed.inReplyTo) return null;
+  const parked = readDisambig(stateDir, parsed.inReplyTo, now);
+  if (!parked) return null;  // expired or never existed — drop silently
+
+  // candidates are already station-name strings (from matchStation's ambiguous
+  // result), not objects.
+  const r = resolveDisambiguation(parsed.answer, parked.candidates);
+  if (r.status !== 'resolved') {
+    // Keep the parked state; just nudge the user. Reuse ambiguousStationReply
+    // so they get the numbered list again with a fresh ourMsgid (which
+    // becomes the new lookup key).
+    const ourMsgid = newMsgid();
+    parkDisambig(stateDir, { ...parked, ourMsgid });
+    removeDisambig(stateDir, parked.ourMsgid);
+    return ambiguousStationReply({
+      trainNum: parked.parsed.trainNum, line: parked.line,
+      station: parked.parsed[parked.ambiguousField],
+      candidates: parked.candidates,
+      sender: email.from, incomingMsgid: email.msgid, ourMsgid,
+    });
+  }
+
+  // Reconstruct a parsed track request with the chosen station and resolve fresh.
+  const fixedParsed = { ...parked.parsed, [parked.ambiguousField]: r.match };
+  removeDisambig(stateDir, parked.ourMsgid);
+  // We carry the original sender's email forward — the user replied from the
+  // same address, but we use the parked sender to be safe (no spoofing).
+  return handleTrack({
+    email: { ...email, from: parked.sender },
+    parsed: fixedParsed,
+    stateDir, primaryClient, fallbackClient, aliases, limits, now,
   });
 }
 
@@ -164,7 +206,7 @@ function handleStop({ email, parsed, stateDir }) {
   }
   count = matches.length;
   for (const m of matches) {
-    moveToDone(m.path, stateDir, m.path.split('/').pop());
+    dropTerminalRecord(m.path);
   }
   const trains = matches.map(m => ({
     line: m.rec.resolved?.line || m.rec.request?.trainNum,
@@ -235,10 +277,7 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
       // Static help reply; reuses missing-context body since it's the same teaching moment.
       return missingContextReply({ trainNum: 'help', sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid() });
     case 'reply':
-      // Disambiguation completion — full implementation is Phase 7. For now,
-      // silently drop replies we can't correlate (caller can re-send a fresh
-      // request with the corrected station name).
-      return null;
+      return handleDisambigReply({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now });
     case 'error':
     default:
       return genericErrorReply({

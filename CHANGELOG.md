@@ -10,6 +10,25 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Implementation: 0.8.0 — privacy retention zero + disambiguation completion + open allowlist
+
+**Privacy: delete on terminal (no retention).**
+The `done/` archive is gone. When a trip ends — arrival, STOP, cancellation, tracking-lost — the record is `unlinkSync()`'d from `state/active/` with no copy left behind. `errors/` is also gone; malformed records are logged once and deleted (we couldn't extract a sender from them anyway). The `scrubSender()` helper is removed as dead code; `state/active/<msgid>.json` keeps plaintext sender only during active tracking, and that's the entire window the address is held. Operator-level metrics (total users, total trips) derive from `state/users/<hash>.json` counters and `logs/push.jsonl` (senderHash-keyed). Privacy claim is now literally true: **address and record are both deleted at trip end.**
+
+**Disambiguation reply completion.**
+When resolve returns `disambiguation_needed`, `server.js` now parks the partial parsed state at `state/pending-disambig/<our-msgid>.json` (24h TTL, lazy expiry). When the user replies — body is just a digit (`1`) or a station name — the parser returns `kind: 'reply'` and `handleDisambigReply` looks up by `In-Reply-To`, applies the answer via `resolveDisambiguation`, and resolves fresh. Out-of-range digits re-send the numbered list. Replies with unknown In-Reply-To are silently dropped.
+
+**Reply-To threading.**
+Outbound replies from `noreply@late.fyi` now carry `Reply-To: <TRAINNUM>@late.fyi` so the user's "Reply" routes back through the worker (which still drops `noreply@` defensively). Without this, replies to confirmation/disambig emails would never reach ingest.
+
+**Parser fix.**
+`parse.js` now treats any inbound with `In-Reply-To` and no recognized headers as `kind: 'reply'`, regardless of local-part. Previously a valid-trainnum local-part would short-circuit to fresh-track even on a reply to disambig.
+
+**Allowlist opened.**
+`ALLOWED_SENDERS=` (empty) on both VPS and Worker. Anyone can email `<TRAINNUM>@late.fyi`, subject to the rate/active limits (10/hr, 50/day, 20 active per sender) shipped earlier in this release.
+
+234/234 tests pass.
+
 ### `missingContextReply` documents all subject options
 - The "I don't know what you need" reply now surfaces the full subject grammar in a structured layout: pickup vs boarding modes, plus optional `On:`, `Trip:`, `Channels:` with a combined example. Previously only `From:` / `To:` were mentioned. This is the canonical teaching reply — when a sender is confused, they see the whole UX, not just half.
 

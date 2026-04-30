@@ -14,10 +14,13 @@ import { readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, unlink
 import { join } from 'node:path';
 import { poll, shouldPollNow, isTerminal } from './poll.js';
 import { dispatch } from './push.js';
-import { senderHash, scrubSender } from './users.js';
+import { senderHash } from './users.js';
 
 function ensureDirs(stateDir, logDir) {
-  for (const sub of ['active', 'done', 'errors']) mkdirSync(join(stateDir, sub), { recursive: true });
+  // Only `active/` is needed long-term. Terminal records are deleted, not
+  // moved to `done/`. Malformed records are deleted with a log line, not
+  // archived to `errors/`. Privacy: nothing per-trip survives a trip ending.
+  mkdirSync(join(stateDir, 'active'), { recursive: true });
   mkdirSync(logDir, { recursive: true });
 }
 
@@ -47,8 +50,6 @@ function readJson(path) {
 export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null }) {
   ensureDirs(stateDir, logDir);
   const activeDir = join(stateDir, 'active');
-  const doneDir = join(stateDir, 'done');
-  const errorsDir = join(stateDir, 'errors');
   const pushLog = join(logDir, 'push.jsonl');
 
   const summary = { polled: 0, skipped: 0, events: 0, terminal: 0, errors: 0 };
@@ -61,8 +62,11 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     const path = join(activeDir, f);
     const record = readJson(path);
     if (!record) {
+      // Malformed record. Log + delete; we can't recover anything from it
+      // and we don't archive (privacy: no orphan records sitting around).
       summary.errors++;
-      try { renameSync(path, join(errorsDir, f)); } catch { /* ignore */ }
+      console.error(`[poll-runner] dropping malformed record ${f}`);
+      try { unlinkSync(path); } catch { /* race with another tick — fine */ }
       continue;
     }
 
@@ -133,13 +137,11 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // Atomic write back (still in active/).
     atomicWrite(path, updatedRecord);
 
-    // Move to done/ if terminal — and scrub the plaintext sender on the
-    // way. After this point, no done record holds an email address.
+    // Delete on terminal (arrival, STOP, cancellation, tracking-lost). No
+    // archive, no scrub-and-move — the record is simply gone. Aggregate
+    // operator metrics live in state/users/<hash>.json (counters) and
+    // logs/push.jsonl (event audit, senderHash only).
     if (isTerminal(result.updatedRecord, now)) {
-      const dest = join(doneDir, f);
-      const tmp = `${dest}.tmp`;
-      writeFileSync(tmp, JSON.stringify(scrubSender(updatedRecord), null, 2));
-      renameSync(tmp, dest);
       unlinkSync(path);
       summary.terminal++;
     }

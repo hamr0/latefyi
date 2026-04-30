@@ -14,15 +14,6 @@ export function senderHash(email) {
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 16);
 }
 
-// Strip PII from a tracking record before it lands in done/.
-// Replaces the plaintext `sender` with `senderHash`; everything else is kept
-// (train number, route, schedule, events, state) for diagnostics. Done records
-// then contain no contact info — no list of users that could ever be emailed.
-export function scrubSender(rec) {
-  if (!rec || !rec.sender) return rec;
-  const { sender, ...rest } = rec;
-  return { ...rest, senderHash: senderHash(sender) };
-}
 
 export function ntfyTopic(email, prefix = 'latefyi-') {
   return `${prefix}${senderHash(email)}`;
