@@ -28,6 +28,24 @@ function withFooter(body) {
   return `${body}\n\n${FOOTER}`;
 }
 
+// One-click stop links. Mail clients render bare `mailto:` URIs as tappable
+// links; clicking opens a fresh compose with `Subject: STOP <TRAIN>` already
+// filled, which the parser handles deterministically. This is the canonical
+// way to stop — replying STOP to a confirmation is intentionally not parsed
+// (attribution lines and quoted-content boundaries make it unreliable).
+function stopLinks(trainNum, trip) {
+  const lines = [];
+  if (trainNum) {
+    lines.push(`Stop tracking this train:`);
+    lines.push(`  mailto:stop@${DOMAIN}?subject=STOP%20${trainNum}`);
+  }
+  if (trip) {
+    lines.push(`Stop the whole trip (${trip}):`);
+    lines.push(`  mailto:stop@${DOMAIN}?subject=STOP%20TRIP%20${encodeURIComponent(trip)}`);
+  }
+  return lines.join('\n');
+}
+
 function reply({ subject, body, to, inReplyTo, references, msgid, replyTo }) {
   const headers = {};
   if (inReplyTo) {
@@ -63,9 +81,7 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
 
   const tripLine = resolved.trip ? `\nTrip: ${resolved.trip}` : '';
   const updatesLine = `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.`;
-  const stopLine = resolved.trip
-    ? `Reply STOP to stop this train, or STOP TRIP ${resolved.trip} to stop the whole trip.`
-    : `Reply STOP to stop tracking.`;
+  const stopBlock = stopLinks(trainNum, resolved.trip);
 
   return reply({
     subject: `Tracking ${line} — ${fromName} → ${toName}`,
@@ -76,7 +92,7 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
     body:
       `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
       `Scheduled: dep ${fmtTime(dep)} ${fromName}, arr ${fmtTime(arr)} ${toName}.\n` +
-      `${updatesLine}\n${stopLine}`,
+      `${updatesLine}\n\n${stopBlock}`,
   });
 }
 
@@ -274,13 +290,15 @@ export function ntfyOptInReply({ topic, sender, incomingMsgid, ourMsgid, baseUrl
 // all updates per-train into one collapsed conversation (PRD §6).
 export function pushReply({ event, line, trainNum, sender, confirmationMsgid, ourMsgid }) {
   const subject = event.title || `${line || trainNum} update`;
+  const baseBody = event.body || event.title || `${line || trainNum} update`;
+  const stopBlock = stopLinks(trainNum, event.trip);
   return reply({
     subject,
     to: sender,
     inReplyTo: confirmationMsgid,
     references: confirmationMsgid,
     msgid: ourMsgid,
-    body: event.body || event.title || `${line || trainNum} update`,
+    body: stopBlock ? `${baseBody}\n\n${stopBlock}` : baseBody,
   });
 }
 

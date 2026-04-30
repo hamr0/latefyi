@@ -199,14 +199,13 @@ export function parse(email) {
     }
   }
 
-  // 2. STOP detection. Two sources, in order:
-  //    a) the combined headerSrc (subject + first body line) — catches a
-  //       fresh email with `STOP` in the subject or as the only body line.
-  //    b) the body's first non-empty line in isolation — catches a reply
-  //       where the subject is `Re: Tracking ...` (which would block the
-  //       headerSrc match) and the user simply top-posted `STOP` above the
-  //       quoted original. This is the natural reply UX.
-  const stop = tryParseStop(headerSrc) || tryParseStop(firstNonEmptyLine(body));
+  // 2. STOP detection from headerSrc (subject + first body line). The
+  //    canonical way to stop is to click the mailto: link in any outbound
+  //    email — that opens a fresh compose with `Subject: STOP <TRAIN>`,
+  //    which lands here as a clean match. Replying STOP to a confirmation
+  //    is intentionally not handled: client-specific attribution lines and
+  //    quoted-content boundaries make it unreliable across mail clients.
+  const stop = tryParseStop(headerSrc);
   if (stop) {
     // If the local-part is a valid train number and STOP came alone, that train is the target.
     let scope = stop.scope;

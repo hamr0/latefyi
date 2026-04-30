@@ -58,16 +58,18 @@ test('confirmation: mentions email delivery starting T-30', () => {
   assert.match(r.body, /Updates by email starting T-30/);
 });
 
-test('confirmation: tells user how to stop (no trip → just STOP)', () => {
-  const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b' });
-  assert.match(r.body, /Reply STOP to stop tracking/);
+test('confirmation: includes one-click mailto stop link with train number', () => {
+  const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', trainNum: 'EUR9316' });
+  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20EUR9316/);
+  assert.match(r.body, /Stop tracking this train/);
 });
 
-test('confirmation: with trip mentions both STOP and STOP TRIP <name>', () => {
+test('confirmation: with trip adds a second mailto for STOP TRIP', () => {
   const resolved = { ...sampleResolved(), trip: 'berlin-weekend' };
-  const r = confirmationReply({ resolved, sender: 'a@b' });
-  assert.match(r.body, /Reply STOP to stop this train/);
-  assert.match(r.body, /STOP TRIP berlin-weekend/);
+  const r = confirmationReply({ resolved, sender: 'a@b', trainNum: 'EUR9316' });
+  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20EUR9316/);
+  assert.match(r.body, /mailto:stop@late\.fyi\?subject=STOP%20TRIP%20berlin-weekend/);
+  assert.match(r.body, /Stop the whole trip \(berlin-weekend\)/);
 });
 
 test('confirmation: no ntfy/CHANNELS mentions while ntfy is paused', () => {
