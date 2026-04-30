@@ -18,7 +18,8 @@ Travelling later? Add `On: 2026-05-04` (or `5 May 2026`) to the subject. We'll w
 ## You'll get back (in seconds)
 
 ```
-From: latefyi <ICE145@late.fyi>
+From:    latefyi <ICE145@late.fyi>
+Subject: Tracking ICE 145 — Amsterdam Centraal → Berlin Ostbahnhof
 
 Tracking ICE 145, Amsterdam Centraal → Berlin Ostbahnhof.
 Scheduled: dep 10:00, arr 16:02.
@@ -31,6 +32,8 @@ Stop tracking this train:
 ```
 
 `TBC` fills in close to departure: platforms are operator-assigned ~30 min before, and live status (delays, cancellations, route changes) follows real-time data once the train enters service. Then silence — until something actually changes.
+
+If you set a `Trip:` tag or an `On:` date, the subject reflects them so multi-train trips and advance-planned trips group cleanly in your inbox: `Tracking ICE 1255 [austria] — Amsterdam Centraal → Stuttgart Hbf — 2026-05-06`.
 
 ## To stop
 
