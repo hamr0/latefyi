@@ -56,6 +56,9 @@ function defaultRecord(email) {
     first_seen_at: now,
     last_seen_at: now,
     trains_tracked_count: 0,
+    // Bounded timestamp array of fresh tracking requests in the last 24h.
+    // Trimmed on every recordRequest() call. Used by checkRateLimit().
+    recent_requests: [],
   };
 }
 
@@ -92,6 +95,55 @@ export function incrementTrainCount(email, stateDir) {
   const rec = getOrCreate(email, stateDir);
   rec.trains_tracked_count = (rec.trains_tracked_count || 0) + 1;
   rec.last_seen_at = new Date().toISOString();
+  atomicWrite(userPath(stateDir, email), rec);
+  return rec;
+}
+
+// ---- abuse limits ----
+
+export const DEFAULT_LIMITS = {
+  perHour: 10,
+  perDay: 50,
+  maxActiveTrains: 20,
+};
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS  = 24 * ONE_HOUR_MS;
+
+// Pure: returns { allowed, reason?, retryAt? } given a record and a clock.
+// Used by server.js handleTrack BEFORE recording the request, so a denied
+// request never lands in recent_requests (otherwise rejections would
+// extend their own ban).
+export function checkRateLimit(record, now = Date.now(), limits = DEFAULT_LIMITS) {
+  const recents = (record?.recent_requests || []).map(t => Date.parse(t)).filter(t => !isNaN(t));
+  const lastHour = recents.filter(t => now - t < ONE_HOUR_MS).length;
+  const lastDay  = recents.filter(t => now - t < ONE_DAY_MS).length;
+
+  if (lastHour >= limits.perHour) {
+    // Earliest slot in the hour bucket frees up at oldestInHour + ONE_HOUR_MS.
+    const inHour = recents.filter(t => now - t < ONE_HOUR_MS).sort((a, b) => a - b);
+    const retryAt = new Date(inHour[0] + ONE_HOUR_MS).toISOString();
+    return { allowed: false, reason: 'hourly', retryAt };
+  }
+  if (lastDay >= limits.perDay) {
+    const inDay = recents.filter(t => now - t < ONE_DAY_MS).sort((a, b) => a - b);
+    const retryAt = new Date(inDay[0] + ONE_DAY_MS).toISOString();
+    return { allowed: false, reason: 'daily', retryAt };
+  }
+  return { allowed: true };
+}
+
+// Append `now` to recent_requests, trim entries older than 24h. Persists.
+// Cap the array at 200 entries even if all are recent (defensive — a sender
+// who somehow blows past `perDay` shouldn't grow the file unboundedly).
+export function recordRequest(email, stateDir, now = Date.now()) {
+  const rec = getOrCreate(email, stateDir);
+  const cutoff = now - ONE_DAY_MS;
+  const kept = (rec.recent_requests || [])
+    .filter(t => Date.parse(t) >= cutoff)
+    .concat([new Date(now).toISOString()]);
+  rec.recent_requests = kept.slice(-200);
+  rec.last_seen_at = new Date(now).toISOString();
   atomicWrite(userPath(stateDir, email), rec);
   return rec;
 }

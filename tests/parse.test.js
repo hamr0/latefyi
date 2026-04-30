@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parse } from '../src/parse.js';
+import { parse, parseOnDate } from '../src/parse.js';
 
 // ---- helpers ----
 const email = (over = {}) => ({
@@ -268,4 +268,72 @@ test('first occurrence of a header wins (subject beats body)', () => {
     body: 'From: Berlin',
   }));
   assert.equal(r.from, 'Amsterdam');
+});
+
+// ===== On: header (advance planning) =====
+
+const NOW_2026_04_29 = Date.parse('2026-04-29T12:00:00Z');
+
+test('parseOnDate accepts ISO YYYY-MM-DD', () => {
+  assert.deepEqual(parseOnDate('2026-05-04', NOW_2026_04_29), { ok: true, date: '2026-05-04' });
+});
+
+test('parseOnDate accepts "5 May 2026"', () => {
+  assert.deepEqual(parseOnDate('5 May 2026', NOW_2026_04_29), { ok: true, date: '2026-05-05' });
+});
+
+test('parseOnDate accepts "05-May-26"', () => {
+  assert.deepEqual(parseOnDate('05-May-26', NOW_2026_04_29), { ok: true, date: '2026-05-05' });
+});
+
+test('parseOnDate accepts month-name case-insensitively', () => {
+  assert.deepEqual(parseOnDate('5-MAY-2026', NOW_2026_04_29), { ok: true, date: '2026-05-05' });
+  assert.deepEqual(parseOnDate('5 may 2026', NOW_2026_04_29), { ok: true, date: '2026-05-05' });
+});
+
+test('parseOnDate rejects pure numeric (US/EU ambiguous)', () => {
+  const r = parseOnDate('05/04/26', NOW_2026_04_29);
+  assert.equal(r.ok, false);
+  assert.equal(r.error, 'invalid_date_format');
+});
+
+test('parseOnDate rejects past dates', () => {
+  const r = parseOnDate('2026-04-01', NOW_2026_04_29);
+  assert.equal(r.ok, false);
+  assert.equal(r.error, 'date_in_past');
+});
+
+test('parseOnDate rejects dates >90 days out', () => {
+  const r = parseOnDate('2026-09-01', NOW_2026_04_29);
+  assert.equal(r.ok, false);
+  assert.equal(r.error, 'date_too_far');
+});
+
+test('parseOnDate accepts today', () => {
+  assert.deepEqual(parseOnDate('2026-04-29', NOW_2026_04_29), { ok: true, date: '2026-04-29' });
+});
+
+test('parseOnDate rejects malformed', () => {
+  assert.equal(parseOnDate('next tuesday', NOW_2026_04_29).ok, false);
+  assert.equal(parseOnDate('2026-13-01', NOW_2026_04_29).ok, false);
+  assert.equal(parseOnDate('5 Smarch 2026', NOW_2026_04_29).ok, false);
+});
+
+test('parse() exposes onDate on track requests', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof, On: 2099-01-01',
+  }));
+  // 2099 is way past the 90-day cutoff → error
+  assert.equal(r.kind, 'error');
+  assert.equal(r.code, 'date_too_far');
+});
+
+test('parse() returns onDate=null when On: absent', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.onDate, null);
 });

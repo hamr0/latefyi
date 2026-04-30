@@ -10,6 +10,12 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Phase 7: deliverability + abuse limits + advance planning
+- **Deliverability** — SPF (added VPS IP `155.94.144.191`), DKIM (selector `latefyi2026`, opendkim signing-table entry, public key TXT at `latefyi2026._domainkey.late.fyi`), DMARC (`_dmarc.late.fyi`, `p=none` monitoring). Verified via direct send to Gmail: SPF=PASS, DKIM=PASS, DMARC=PASS.
+- **Abuse limits** — `users.js` `checkRateLimit()` + `recordRequest()` (pure, with bounded 24h timestamp array per user), wired into `server.js handleTrack`. Defaults: 10 fresh requests/hour, 50/day, 20 active trains/sender. Two new reply templates: `rateLimitedReply` (with retry time), `tooManyActiveReply` (suggests STOP). Failed resolves don't count against the budget.
+- **`On: <date>` advance planning** — `parseOnDate()` accepts ISO `2026-05-04`, `5 May 2026`, `5-May-2026`, `05-May-26` (rejects ambiguous `05/04/26`). Validation: must be today or future, max 90 days ahead. Threaded through resolve as a `when: Date` option to HAFAS departures/arrivals. Records sit in `state/pending/` until T-30 (existing wake-up mechanism, no new infra).
+- 13 new tests; 233/233 pass.
+
 ### Privacy: scrub plaintext sender on terminal (no retention)
 - New `scrubSender(rec)` in `src/users.js`: replaces `rec.sender` with `rec.senderHash`. Pure / no I/O.
 - `src/server.js` `moveToDone()` now reads → scrubs → atomic-writes to `done/` → unlinks `active/`. Used by all STOP scopes (single / TRIP / ALL).

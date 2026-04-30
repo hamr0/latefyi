@@ -159,6 +159,36 @@ export function alreadyArrivedReply({ trainNum, line, toStation, arrivedAt, send
   });
 }
 
+// ---- abuse limits ----
+
+function fmtDateTime(iso) {
+  if (!iso) return '?';
+  const d = new Date(iso);
+  return d.toISOString().replace(/^(.+T\d{2}:\d{2}).+$/, '$1Z');
+}
+
+export function rateLimitedReply({ reason, retryAt, sender, incomingMsgid, ourMsgid }) {
+  const window = reason === 'hourly' ? 'in the last hour' : 'in the last 24 hours';
+  return reply({
+    subject: `Too many tracking requests`,
+    to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
+    body:
+      `You've sent too many fresh tracking requests ${window}.\n` +
+      `Try again after ${fmtDateTime(retryAt)}.\n\n` +
+      `Already-tracked trains keep updating — this only blocks new ones.`,
+  });
+}
+
+export function tooManyActiveReply({ count, max, sender, incomingMsgid, ourMsgid }) {
+  return reply({
+    subject: `Too many active trains`,
+    to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
+    body:
+      `You're already tracking ${count} trains, which is the per-sender limit (${max}).\n\n` +
+      `Reply STOP <TRAINNUM> on any of them, or STOP ALL to clear everything, then resend this request.`,
+  });
+}
+
 // ---- §7: unauthorized sender (system-internal note; rarely sent) ----
 
 export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {

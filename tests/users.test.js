@@ -2,10 +2,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { senderHash, ntfyTopic, scrubSender, getOrCreate, setChannel, incrementTrainCount } from '../src/users.js';
+import { senderHash, ntfyTopic, scrubSender, getOrCreate, setChannel, incrementTrainCount, recordRequest, checkRateLimit } from '../src/users.js';
 
 const td = () => mkdtempSync(join(tmpdir(), 'latefyi-users-'));
 
@@ -129,4 +129,75 @@ test('scrubSender does not mutate the input', () => {
   const rec = { sender: 'a@b', msgid: 'm' };
   scrubSender(rec);
   assert.equal(rec.sender, 'a@b');
+});
+
+// ===== rate limit =====
+
+test('checkRateLimit: empty record is allowed', () => {
+  assert.equal(checkRateLimit({}, Date.now()).allowed, true);
+});
+
+test('checkRateLimit: under hourly cap is allowed', () => {
+  const now = Date.parse('2026-04-29T12:00:00Z');
+  const recent_requests = Array(9).fill(0).map((_, i) => new Date(now - i * 60_000).toISOString());
+  assert.equal(checkRateLimit({ recent_requests }, now).allowed, true);
+});
+
+test('checkRateLimit: at hourly cap returns retryAt = oldest+1h', () => {
+  const now = Date.parse('2026-04-29T12:00:00Z');
+  // 10 requests in the last hour
+  const recent_requests = Array(10).fill(0).map((_, i) => new Date(now - i * 60_000).toISOString());
+  const r = checkRateLimit({ recent_requests }, now);
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, 'hourly');
+  // Oldest is now - 9min; retryAt = oldest + 60min = now + 51min
+  assert.equal(r.retryAt, new Date(now - 9 * 60_000 + 60 * 60_000).toISOString());
+});
+
+test('checkRateLimit: requests >1h ago do not count toward hourly cap', () => {
+  const now = Date.parse('2026-04-29T12:00:00Z');
+  const recent_requests = Array(15).fill(0).map((_, i) => new Date(now - (61 + i) * 60_000).toISOString());
+  // All 15 are >1h ago; under daily (50). Should be allowed.
+  assert.equal(checkRateLimit({ recent_requests }, now).allowed, true);
+});
+
+test('checkRateLimit: 50 requests in 24h hits daily cap', () => {
+  const now = Date.parse('2026-04-29T12:00:00Z');
+  // Spread across 23h so under hourly but at daily.
+  const recent_requests = Array(50).fill(0).map((_, i) => new Date(now - (i * 23 * 60_000)).toISOString());
+  const r = checkRateLimit({ recent_requests }, now);
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, 'daily');
+});
+
+test('checkRateLimit: respects custom limits', () => {
+  const now = Date.now();
+  const recent_requests = [new Date(now).toISOString()];
+  const r = checkRateLimit({ recent_requests }, now, { perHour: 1, perDay: 2, maxActiveTrains: 5 });
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, 'hourly');
+});
+
+test('recordRequest: appends timestamp and persists', () => {
+  const dir = td();
+  const now = Date.parse('2026-04-29T12:00:00Z');
+  const r = recordRequest('amr@example.com', dir, now);
+  assert.equal(r.recent_requests.length, 1);
+  assert.equal(r.recent_requests[0], new Date(now).toISOString());
+
+  const r2 = recordRequest('amr@example.com', dir, now + 60_000);
+  assert.equal(r2.recent_requests.length, 2);
+});
+
+test('recordRequest: trims entries older than 24h', () => {
+  const dir = td();
+  const now = Date.parse('2026-04-29T12:00:00Z');
+  // Pre-seed via getOrCreate then write 25h-old entries directly
+  const oldRec = getOrCreate('amr@example.com', dir);
+  oldRec.recent_requests = [new Date(now - 25 * 60 * 60 * 1000).toISOString()];
+  const path = join(dir, 'users', `${oldRec.sender_hash}.json`);
+  writeFileSync(path, JSON.stringify(oldRec));
+
+  const updated = recordRequest('amr@example.com', dir, now);
+  assert.equal(updated.recent_requests.length, 1, '25h-old entry should have been trimmed');
 });

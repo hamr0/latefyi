@@ -192,3 +192,37 @@ test('parsed.trip and parsed.channels are preserved on resolved result', async (
   assert.equal(r.trip, 'rome-2026');
   assert.equal(r.channels, 'both');
 });
+
+test('parsed.onDate passes when=<Date> through to client.departures', async () => {
+  let capturedOpts = null;
+  const client = {
+    async locations() { return [{ id: 'AMS', name: 'Amsterdam Centraal', type: 'stop' }]; },
+    async departures(_id, opts) {
+      capturedOpts = opts;
+      return [];
+    },
+    async arrivals() { return []; },
+    async trip() { throw new Error('not reached'); },
+  };
+  await resolve({
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Ostbahnhof', onDate: '2026-05-04' },
+    primaryClient: client,
+  });
+  assert.ok(capturedOpts.when instanceof Date, 'when should be a Date');
+  assert.equal(capturedOpts.when.toISOString(), '2026-05-04T00:00:00.000Z');
+});
+
+test('parsed.onDate absent → no when in opts (HAFAS uses now)', async () => {
+  let capturedOpts = null;
+  const client = {
+    async locations() { return [{ id: 'AMS', name: 'Amsterdam Centraal', type: 'stop' }]; },
+    async departures(_id, opts) { capturedOpts = opts; return []; },
+    async arrivals() { return []; },
+    async trip() { throw new Error('not reached'); },
+  };
+  await resolve({
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Ostbahnhof' },
+    primaryClient: client,
+  });
+  assert.equal(capturedOpts.when, undefined);
+});

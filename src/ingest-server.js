@@ -21,6 +21,7 @@ export function createIngestServer({
   allowlist = null,
   transport = null,
   ingestToken,
+  limits,
 } = {}) {
   if (!stateDir) throw new Error('createIngestServer: stateDir required');
   if (!ingestToken) throw new Error('createIngestServer: ingestToken required');
@@ -68,7 +69,7 @@ export function createIngestServer({
       }
 
       const reply = await handleInbound({
-        email, stateDir, primaryClient, fallbackClient, aliases, allowlist,
+        email, stateDir, primaryClient, fallbackClient, aliases, allowlist, limits,
       });
 
       let sent = false, sendError = null;
@@ -149,9 +150,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log('[ingest] no SMTP_HOST set — running in dry-run mode (replies parsed but not sent)');
   }
 
+  // Abuse limits — env-tunable, otherwise users.js DEFAULT_LIMITS apply.
+  const limits = {
+    perHour:        parseInt(process.env.LIMIT_PER_HOUR        || '10', 10),
+    perDay:         parseInt(process.env.LIMIT_PER_DAY         || '50', 10),
+    maxActiveTrains:parseInt(process.env.LIMIT_MAX_ACTIVE      || '20', 10),
+  };
+  console.log(`[ingest] limits: ${limits.perHour}/hr, ${limits.perDay}/day, ${limits.maxActiveTrains} active`);
+
   const server = createIngestServer({
     stateDir, primaryClient: profiles.oebb, fallbackClient: profiles.pkp,
-    aliases, allowlist, transport, ingestToken,
+    aliases, allowlist, transport, ingestToken, limits,
   });
   server.listen(port, host, () => console.log(`[ingest] listening on ${host}:${port}`));
 }

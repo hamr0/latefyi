@@ -13,11 +13,15 @@ import { join } from 'node:path';
 import { parse } from './parse.js';
 import { resolve as resolveTrip } from './resolve.js';
 import { schedule, readPending } from './schedule.js';
-import { getOrCreate, setChannel, incrementTrainCount, ntfyTopic, scrubSender } from './users.js';
+import {
+  getOrCreate, setChannel, incrementTrainCount, ntfyTopic, scrubSender,
+  checkRateLimit, recordRequest, DEFAULT_LIMITS,
+} from './users.js';
 import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
   unauthorizedSenderReply, stopReply, ntfyOptInReply, genericErrorReply,
+  rateLimitedReply, tooManyActiveReply,
 } from './reply.js';
 
 const DOMAIN = 'late.fyi';
@@ -67,11 +71,30 @@ function moveToDone(matchPath, stateDir, fname) {
 
 // ---- handlers ----
 
-async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases }) {
+async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits = DEFAULT_LIMITS, now = Date.now() }) {
   if (parsed.mode === 'MISSING') {
     return missingContextReply({
       trainNum: parsed.trainNum, sender: email.from,
       incomingMsgid: email.msgid, ourMsgid: newMsgid(),
+    });
+  }
+
+  // Rate-limit BEFORE resolving — saves HAFAS calls on rejected senders.
+  const userRecord = getOrCreate(email.from, stateDir);
+  const rl = checkRateLimit(userRecord, now, limits);
+  if (!rl.allowed) {
+    return rateLimitedReply({
+      reason: rl.reason, retryAt: rl.retryAt,
+      sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid(),
+    });
+  }
+
+  // Active-cap: count this sender's pending+active records. Cheap (small dirs).
+  const activeCount = findRecordsForSender(stateDir, email.from, () => true).length;
+  if (activeCount >= limits.maxActiveTrains) {
+    return tooManyActiveReply({
+      count: activeCount, max: limits.maxActiveTrains,
+      sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid(),
     });
   }
 
@@ -110,13 +133,14 @@ async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackCli
     });
   }
 
-  // Happy path: resolved, schedule and confirm.
+  // Happy path: resolved, schedule and confirm. Record the request now (after
+  // resolve passes, so a hard error doesn't count against the rate budget).
   const ourMsgid = newMsgid();
-  const userRecord = getOrCreate(email.from, stateDir);
   schedule({
     msgid: email.msgid, sender: email.from, parsed, resolved: r, stateDir,
     confirmationMsgid: ourMsgid,
   });
+  recordRequest(email.from, stateDir, now);
   incrementTrainCount(email.from, stateDir);
 
   return confirmationReply({
@@ -192,7 +216,7 @@ function handleConfig({ email, parsed, stateDir }) {
 //   aliases?        from config/aliases.json
 //   allowlist?      string[] of allowed lowercase senders; null = open
 //
-export async function handleInbound({ email, stateDir, primaryClient, fallbackClient, aliases = {}, allowlist = null }) {
+export async function handleInbound({ email, stateDir, primaryClient, fallbackClient, aliases = {}, allowlist = null, limits = DEFAULT_LIMITS, now = Date.now() }) {
   // Allowlist: silent drop (no backscatter to spoofed senders, per §13.9).
   if (!isAllowlisted((email.from || '').toLowerCase(), allowlist)) {
     return null;
@@ -202,7 +226,7 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
 
   switch (parsed.kind) {
     case 'track':
-      return handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases });
+      return handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now });
     case 'stop':
       return handleStop({ email, parsed, stateDir });
     case 'config':

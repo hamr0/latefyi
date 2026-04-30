@@ -269,3 +269,66 @@ test('STOP scrubs plaintext sender from done record (privacy claim)', async () =
   // Other fields should still be there for diagnostics.
   assert.equal(rec.request.trainNum, 'ICE145');
 });
+
+// ===== Abuse limits =====
+
+test('rate limit: 11th request in same hour gets rateLimitedReply', async () => {
+  const { stateDir } = setup();
+  // Tight limits to keep the test fast: 2/hour, 5/day, 5 active.
+  const limits = { perHour: 2, perDay: 5, maxActiveTrains: 5 };
+  for (let i = 0; i < 2; i++) {
+    await handleInbound({
+      email: baseEmail({ msgid: `<m${i}@x>`, subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+      stateDir, primaryClient: fakeOebb(), limits,
+    });
+  }
+  // The 3rd hits the cap.
+  const r = await handleInbound({
+    email: baseEmail({ msgid: '<m3@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(), limits,
+  });
+  assert.match(r.subject, /Too many tracking requests/);
+  assert.match(r.body, /last hour/);
+});
+
+test('rate limit: failed resolves do not consume the budget', async () => {
+  const { stateDir } = setup();
+  const limits = { perHour: 2, perDay: 5, maxActiveTrains: 5 };
+  // Send a request with bad station — fails to resolve, should NOT count.
+  const failClient = {
+    async locations() { return []; },
+    async departures() { return []; },
+    async arrivals() { return []; },
+    async trip() { throw new Error('not found'); },
+  };
+  for (let i = 0; i < 3; i++) {
+    await handleInbound({
+      email: baseEmail({ msgid: `<bad${i}@x>`, subject: 'From: Mars, To: Pluto' }),
+      stateDir, primaryClient: failClient, limits,
+    });
+  }
+  // After 3 hard fails, a real request should still go through.
+  const r = await handleInbound({
+    email: baseEmail({ msgid: '<good@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(), limits,
+  });
+  assert.match(r.subject, /Tracking ICE 145/);
+});
+
+test('active cap: sender at max gets tooManyActiveReply', async () => {
+  const { stateDir } = setup();
+  const limits = { perHour: 100, perDay: 100, maxActiveTrains: 2 };
+  for (let i = 0; i < 2; i++) {
+    await handleInbound({
+      email: baseEmail({ msgid: `<m${i}@x>`, subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+      stateDir, primaryClient: fakeOebb(), limits,
+    });
+  }
+  // 3rd should hit the active cap, not the rate limit.
+  const r = await handleInbound({
+    email: baseEmail({ msgid: '<m3@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(), limits,
+  });
+  assert.match(r.subject, /Too many active trains/);
+  assert.match(r.body, /STOP/);
+});

@@ -59,8 +59,12 @@ async function resolveStationId(client, query) {
 // Find the user's train on `client` by anchoring the search at the given station.
 // `mode === "B"` searches departures; `mode === "A"` searches arrivals.
 // Returns { tripId, sample } or null.
-async function findOnClient(client, anchorStation, trainNum, mode, durationMin) {
+async function findOnClient(client, anchorStation, trainNum, mode, durationMin, when) {
   const opts = { duration: durationMin, results: 800 };
+  // For advance-planned requests (On: <date>), anchor the board search to
+  // start-of-day UTC of that date. With duration = 24h, we cover the whole
+  // day. Without `when`, HAFAS uses "now" → today's nearest run.
+  if (when) opts.when = when;
   let board;
   try {
     if (mode === 'A') board = await client.arrivals(anchorStation.id, opts);
@@ -108,11 +112,14 @@ export async function resolve({ parsed, primaryClient, fallbackClient, aliases =
     { name: 'pkp',  client: fallbackClient },
   ].filter(a => a.client);
 
+  // If user supplied On: <date>, anchor the board search at start-of-day UTC.
+  const when = parsed.onDate ? new Date(`${parsed.onDate}T00:00:00Z`) : undefined;
+
   let endpoint = null, anchorStation = null, found = null;
   for (const { name, client } of attempts) {
     const station = await resolveStationId(client, anchorName);
     if (!station) continue;
-    const hit = await findOnClient(client, station, parsed.trainNum, parsed.mode, durationMin);
+    const hit = await findOnClient(client, station, parsed.trainNum, parsed.mode, durationMin, when);
     if (hit) {
       endpoint = name;
       anchorStation = station;

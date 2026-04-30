@@ -1,7 +1,7 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.6.0
-**Status:** Phases 1–5 + Phase 6 (ntfy opt-in) live at `late.fyi`. 209/209 tests pass. First real-world inbound tracking request confirmed end-to-end on 2026-04-29. Privacy guarantee: plaintext sender is scrubbed from records the moment a trip becomes terminal (arrival, STOP, cancellation) — no retention, no pruning needed. `push.jsonl` event log uses `senderHash` only. Static landing page (`web/index.html`) ready to ship via Cloudflare Pages. Phase 6 ntfy fail-streak → email fallback promotion deferred to Phase 7. Phase 7 (deliverability + abuse limits + soak) is next.
+**Version:** 1.7.0
+**Status:** Phases 1–6 live at `late.fyi`. Phase 7 partially shipped: deliverability (SPF/DKIM/DMARC verified PASS to Gmail), abuse limits (10/hr, 50/day, 20 active per sender), and `On: <date>` advance planning (up to 90 days). 233/233 tests pass. Privacy guarantee enforced: plaintext sender scrubbed on terminal. Landing page live at `late.fyi` via Cloudflare Pages. Allowlist still single-tenant for the moment — broaden once 30-day soak confirms abuse limits hold.
 
 See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr
@@ -110,6 +110,7 @@ A user who wants faster, app-style push notifications instead of (or in addition
 - **Header keys are case-insensitive.** `From:`, `from:`, `FROM:`, `tO:` all parse identically. Values are normalized for matching but preserved verbatim for replies.
 - Station names are matched case-insensitively against the resolved train's stop sequence using fuzzy match (Levenshtein ≤ 2 against canonical names + known aliases).
 - `Trip:` is an optional free-text tag (alphanumeric + dash/underscore, ≤32 chars) that groups multiple per-train tracking requests for batch operations like `STOP TRIP <name>`. Trips are not validated against any list — any string the user picks works. See §7 for STOP semantics.
+- `On: <date>` is an optional advance-planning header. Accepted formats: ISO `2026-05-04`, or day-month-year with **named month** like `5 May 2026`, `5-May-2026`, `05-May-26`. Pure-numeric forms like `05/04/26` are **rejected** (US vs EU ambiguity). The date must be today or future, max 90 days ahead (HAFAS doesn't publish further). When `On:` is set, the request is resolved against that day's HAFAS data; the record sits in `state/pending/` until T-30 of the actual departure, then activates on the existing wake-up cron. When absent, HAFAS picks the nearest run (today or tomorrow).
 - Unknown headers are ignored silently. Extra body content is ignored.
 - **One train per email.** Multi-train journeys = multiple emails. The system never parses a multi-leg itinerary from a single message. Rationale: parsing booking confirmations / itinerary blobs is a maintenance black hole, and the user's *first train* is the load-bearing event for the whole chain. See §22 decision 26.
 - **Bare emails always trigger the §7 "missing context" reply.** Even if `<TRAINNUM>` resolves to exactly one train and one route, the system does not auto-pick `From:` or `To:`. Forcing explicit headers is intentional — it builds the muscle and avoids silent wrong assumptions. See §22 decision 27.

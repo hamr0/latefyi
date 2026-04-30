@@ -13,6 +13,8 @@ Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof
 
 (Picking someone up? Just `To: <station>`, no `From:`.)
 
+Travelling later? Add `On: 2026-05-04` (or `5 May 2026`) to the subject. We'll wake up on the day.
+
 ## You'll get back (in seconds)
 
 ```

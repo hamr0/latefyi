@@ -22,7 +22,53 @@ const TRIP_RE     = /^[A-Za-z0-9_-]{1,32}$/;
 const RESERVED_LOCALPARTS = new Set(['config', 'stop', 'help']);
 const VALID_CHANNELS = new Set(['email', 'ntfy', 'both']);
 
-const HEADER_RE = /(from|to|trip|channels)\s*:\s*([^,\n\r]+)/gi;
+const HEADER_RE = /(from|to|trip|channels|on)\s*:\s*([^,\n\r]+)/gi;
+
+const MONTHS = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+};
+const MAX_PLAN_AHEAD_DAYS = 90;
+
+// Parse the `On:` header. Accepts unambiguous formats only:
+//   2026-05-04          (ISO)
+//   5 May 2026 / 05-May-2026 / 5-May-26
+// Rejects pure-numeric like 05/04/26 (US vs EU ambiguous).
+// Returns { ok: true, date: 'YYYY-MM-DD' } or { ok: false, error }.
+export function parseOnDate(raw, now = Date.now()) {
+  if (!raw) return null;
+  const s = raw.trim();
+  let y, m, d;
+
+  let match = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    y = parseInt(match[1], 10); m = parseInt(match[2], 10); d = parseInt(match[3], 10);
+  } else {
+    match = s.match(/^(\d{1,2})[\s\-\/]+([A-Za-z]+)[\s\-\/]+(\d{2,4})$/);
+    if (!match) return { ok: false, error: 'invalid_date_format' };
+    d = parseInt(match[1], 10);
+    m = MONTHS[match[2].toLowerCase()];
+    if (!m) return { ok: false, error: 'invalid_date_format' };
+    y = parseInt(match[3], 10);
+    if (y < 100) y += 2000;
+  }
+
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (isNaN(date.getTime()) ||
+      date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    return { ok: false, error: 'invalid_date' };
+  }
+  const today = new Date(now);
+  today.setUTCHours(0, 0, 0, 0);
+  if (date.getTime() < today.getTime()) {
+    return { ok: false, error: 'date_in_past' };
+  }
+  const cutoff = today.getTime() + MAX_PLAN_AHEAD_DAYS * 24 * 60 * 60 * 1000;
+  if (date.getTime() > cutoff) {
+    return { ok: false, error: 'date_too_far' };
+  }
+  return { ok: true, date: date.toISOString().slice(0, 10) };
+}
 
 function localPartOf(addr) {
   if (!addr || typeof addr !== 'string') return '';
@@ -199,6 +245,17 @@ export function parse(email) {
     channels = c;
   }
 
+  // 9. Optional date for advance planning.
+  let onDate = null;
+  if (headers.on) {
+    const r = parseOnDate(headers.on);
+    if (r && !r.ok) {
+      return { kind: 'error', code: r.error,
+               message: `On: "${headers.on}" — ${dateErrorMessage(r.error)}` };
+    }
+    onDate = r ? r.date : null;
+  }
+
   return {
     kind: 'track',
     trainNum,
@@ -207,6 +264,17 @@ export function parse(email) {
     to: headers.to || null,
     trip,
     channels,
+    onDate,
     inReplyTo,
   };
+}
+
+function dateErrorMessage(code) {
+  switch (code) {
+    case 'invalid_date_format': return 'use YYYY-MM-DD or 5 May 2026 (numeric-only formats are ambiguous)';
+    case 'invalid_date':        return 'date does not exist';
+    case 'date_in_past':        return 'date has already passed';
+    case 'date_too_far':        return `more than ${MAX_PLAN_AHEAD_DAYS} days ahead — schedules aren't published that far out`;
+    default:                    return 'invalid date';
+  }
 }
