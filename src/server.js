@@ -269,6 +269,12 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
 
   const parsed = parse(email);
 
+  // TEMP: trace every inbound to debug reply-STOP failure reports.
+  // Remove after the diagnosis is complete.
+  const _bh = (email.body || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const _irt = (email.headers && (email.headers['In-Reply-To'] || email.headers['in-reply-to'])) || '';
+  console.log(`[inbound] from=${email.from} to=${email.to} subj=${JSON.stringify((email.subject || '').slice(0, 80))} body=${JSON.stringify(_bh)} irt=${JSON.stringify(_irt)} kind=${parsed.kind}${parsed.code ? ' code=' + parsed.code : ''}${parsed.scope ? ' scope=' + parsed.scope : ''}${parsed.target ? ' target=' + parsed.target : ''}`);
+
   switch (parsed.kind) {
     case 'track':
       return handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now });
