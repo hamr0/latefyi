@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { senderHash, ntfyTopic, getOrCreate, setChannel, incrementTrainCount } from '../src/users.js';
+import { senderHash, ntfyTopic, scrubSender, getOrCreate, setChannel, incrementTrainCount } from '../src/users.js';
 
 const td = () => mkdtempSync(join(tmpdir(), 'latefyi-users-'));
 
@@ -101,4 +101,32 @@ test('incrementTrainCount bumps and persists', () => {
   // Verify on disk
   const onDisk = JSON.parse(readFileSync(join(dir, 'users', `${r2.sender_hash}.json`), 'utf8'));
   assert.equal(onDisk.trains_tracked_count, 2);
+});
+
+// ===== scrubSender =====
+
+test('scrubSender removes plaintext sender and inserts senderHash', () => {
+  const rec = {
+    msgid: '<x@y>',
+    sender: 'amr@example.com',
+    request: { trainNum: 'ICE145', from: 'AC', to: 'BO' },
+    state: { phase: 'arrival_window' },
+  };
+  const out = scrubSender(rec);
+  assert.equal(out.sender, undefined);
+  assert.equal(out.senderHash, senderHash('amr@example.com'));
+  assert.equal(out.msgid, '<x@y>');
+  assert.deepEqual(out.request, rec.request);
+  assert.deepEqual(out.state, rec.state);
+});
+
+test('scrubSender is a no-op when no sender field is present', () => {
+  const rec = { msgid: '<x@y>', request: { trainNum: 'ICE145' } };
+  assert.deepEqual(scrubSender(rec), rec);
+});
+
+test('scrubSender does not mutate the input', () => {
+  const rec = { sender: 'a@b', msgid: 'm' };
+  scrubSender(rec);
+  assert.equal(rec.sender, 'a@b');
 });

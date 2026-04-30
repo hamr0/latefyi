@@ -146,7 +146,50 @@ test('tick: when shouldPollNow allows it and isTerminal, file is moved on the sa
   await tick({ stateDir, logDir, getClient: () => fakeClient({ TRIP_ICE145: tripData }), now: new Date('2026-04-29T14:09:00Z').getTime() });
 
   assert.deepEqual(readdirSync(join(stateDir, 'active')), []);
-  assert.equal(readdirSync(join(stateDir, 'done')).length, 1);
+  const doneFiles = readdirSync(join(stateDir, 'done'));
+  assert.equal(doneFiles.length, 1);
+
+  // Privacy: the moved record must not contain the plaintext sender.
+  const doneRec = JSON.parse(readFileSync(join(stateDir, 'done', doneFiles[0]), 'utf8'));
+  assert.equal(doneRec.sender, undefined, 'plaintext sender must not survive in done/');
+  assert.match(doneRec.senderHash, /^[a-f0-9]{16}$/);
+});
+
+test('push.jsonl logs senderHash, never plaintext sender', async () => {
+  // Setup a record that will produce at least one event (platform changed).
+  const tripDataBefore = {
+    line: { name: 'ICE 145', fahrtNr: '145' },
+    stopovers: [
+      { stop: { name: 'Amsterdam Centraal' }, plannedDeparture: '2026-04-29T08:00:00Z', departure: '2026-04-29T08:00:00Z', plannedDeparturePlatform: '7', departurePlatform: '7' },
+      { stop: { name: 'Berlin Ostbahnhof' },   plannedArrival:   '2026-04-29T14:02:00Z', arrival: '2026-04-29T14:02:00Z' },
+    ],
+  };
+  const tripDataAfter = {
+    line: { name: 'ICE 145', fahrtNr: '145' },
+    stopovers: [
+      { stop: { name: 'Amsterdam Centraal' }, plannedDeparture: '2026-04-29T08:00:00Z', departure: '2026-04-29T08:00:00Z', plannedDeparturePlatform: '7', departurePlatform: '8b' },
+      { stop: { name: 'Berlin Ostbahnhof' },   plannedArrival:   '2026-04-29T14:02:00Z', arrival: '2026-04-29T14:02:00Z' },
+    ],
+  };
+  const initSnap = {
+    pollTimestamp: '2026-04-29T07:30:00Z',
+    hasDeparted: false, hasArrived: false,
+    predictedDeparture: '2026-04-29T08:00:00Z',
+    scheduledDeparture: '2026-04-29T08:00:00Z',
+    plannedDeparturePlatform: '7', departurePlatform: '7',
+  };
+  const rec = recordFor('m-priv', {
+    sender: 'plaintext@example.com',
+    state: { phase: 'pre_anchor', lastPolledAt: '2026-04-29T07:30:00Z', lastPushedSnapshot: initSnap, consecutivePollFailures: 0, endpointInUse: 'oebb' },
+  });
+  const { stateDir, logDir } = setup([rec]);
+
+  await tick({ stateDir, logDir, getClient: () => fakeClient({ TRIP_ICE145: tripDataAfter }), now: new Date('2026-04-29T07:35:00Z').getTime() });
+
+  const log = readFileSync(join(logDir, 'push.jsonl'), 'utf8');
+  assert.ok(log.length > 0, 'expected at least one event in push.jsonl');
+  assert.equal(log.includes('plaintext@example.com'), false, 'push.jsonl must not contain plaintext sender');
+  assert.match(log, /"senderHash":"[a-f0-9]{16}"/);
 });
 
 // ===== error handling =====

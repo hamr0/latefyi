@@ -1,7 +1,7 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.5.0
-**Status:** Phases 1–5 + Phase 6 (ntfy opt-in, transport + deep-link reply) implemented and live at `late.fyi`. 204/204 tests pass. First real-world inbound tracking request confirmed end-to-end on 2026-04-29. Phase 6 ntfy fail-streak → email fallback promotion deferred to Phase 7 (counter is persisted, promotion logic ships with abuse limits). Phase 7 (deliverability + abuse limits + soak) is next.
+**Version:** 1.6.0
+**Status:** Phases 1–5 + Phase 6 (ntfy opt-in) live at `late.fyi`. 209/209 tests pass. First real-world inbound tracking request confirmed end-to-end on 2026-04-29. Privacy guarantee: plaintext sender is scrubbed from records the moment a trip becomes terminal (arrival, STOP, cancellation) — no retention, no pruning needed. `push.jsonl` event log uses `senderHash` only. Static landing page (`web/index.html`) ready to ship via Cloudflare Pages. Phase 6 ntfy fail-streak → email fallback promotion deferred to Phase 7. Phase 7 (deliverability + abuse limits + soak) is next.
 
 See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr

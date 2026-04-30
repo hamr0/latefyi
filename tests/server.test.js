@@ -250,3 +250,22 @@ test('stop single: STOP <TRAINNUM> moves only that one', async () => {
   assert.match(r.subject, /Stopped tracking ICE145/);
   assert.deepEqual(readdirSync(join(stateDir, 'pending')), []);
 });
+
+test('STOP scrubs plaintext sender from done record (privacy claim)', async () => {
+  const { stateDir } = setup();
+  await handleInbound({
+    email: baseEmail({ msgid: '<a@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  await handleInbound({
+    email: baseEmail({ to: 'stop@late.fyi', subject: 'STOP ICE145' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  const doneFiles = readdirSync(join(stateDir, 'done')).filter(f => f.endsWith('.json'));
+  assert.equal(doneFiles.length, 1);
+  const rec = JSON.parse(readFileSync(join(stateDir, 'done', doneFiles[0]), 'utf8'));
+  assert.equal(rec.sender, undefined, 'plaintext sender must not survive in done/');
+  assert.match(rec.senderHash, /^[a-f0-9]{16}$/);
+  // Other fields should still be there for diagnostics.
+  assert.equal(rec.request.trainNum, 'ICE145');
+});

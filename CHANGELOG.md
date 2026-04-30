@@ -10,6 +10,18 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Privacy: scrub plaintext sender on terminal (no retention)
+- New `scrubSender(rec)` in `src/users.js`: replaces `rec.sender` with `rec.senderHash`. Pure / no I/O.
+- `src/server.js` `moveToDone()` now reads → scrubs → atomic-writes to `done/` → unlinks `active/`. Used by all STOP scopes (single / TRIP / ALL).
+- `src/poll-runner.js` terminal-move path scrubs the same way. Also: `push.jsonl` event log now records `senderHash` instead of plaintext sender — long-lived log, no plaintext accumulation.
+- Privacy claim updated on the landing page: "the moment the trip ends — arrival, STOP, or cancellation — your address is deleted." That's now literal.
+- 5 new tests (3 in users.test.js for the helper, 1 in server.test.js for STOP scrub, 2 in poll-runner.test.js for terminal scrub + push.jsonl). 209/209 pass.
+
+### Web: landing page (departure-board)
+- `web/index.html` — single-file static landing for `late.fyi`. Departure-board aesthetic (amber on near-black), no JS, no external deps. Sample board with on-time/delayed/cancelled rows. "What we don't do" section states the privacy contract.
+- Three variations were prototyped (minimal / email-mock / departure-board); v3 picked.
+- Deploy plan: Cloudflare Pages connected to the GitHub repo, `web/` as build output, custom apex `late.fyi`.
+
 ### Implementation: 0.6.0 — Phase 6 (ntfy opt-in, partial)
 - `src/ntfy-transport.js` — real ntfy POST adapter. `createNtfyTransport({ baseUrl, fetch? })` returns `{ sendNtfy({ topic, title, message, priority?, tags? }) }` matching the payload shape `push.js` already builds. Title/Priority/Tags map to ntfy headers. Throws on non-2xx. 7 new tests (POST URL composition, header serialization, error mapping, missing-fetch guard, missing-topic guard, default base URL).
 - `src/poll-runner.js` CLI — composes SMTP + ntfy transports and wires `getUserChannel` from `users.js`. Now actually delivers events instead of only logging to `push.jsonl`.

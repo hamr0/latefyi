@@ -8,12 +8,12 @@
 // dependency-injected, so tests use fakes.
 
 import { randomBytes } from 'node:crypto';
-import { readdirSync, readFileSync, renameSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from './parse.js';
 import { resolve as resolveTrip } from './resolve.js';
 import { schedule, readPending } from './schedule.js';
-import { getOrCreate, setChannel, incrementTrainCount, ntfyTopic } from './users.js';
+import { getOrCreate, setChannel, incrementTrainCount, ntfyTopic, scrubSender } from './users.js';
 import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
@@ -51,9 +51,17 @@ function findRecordsForSender(stateDir, sender, predicate) {
   return matches;
 }
 
+// Scrub-and-move: read the active record, replace plaintext sender with its
+// hash, write atomically to done/, then unlink active. Privacy claim: no
+// plaintext email survives in done/, ever.
 function moveToDone(matchPath, stateDir, fname) {
   const dest = join(stateDir, 'done', fname);
-  renameSync(matchPath, dest);
+  const rec = JSON.parse(readFileSync(matchPath, 'utf8'));
+  const scrubbed = scrubSender(rec);
+  const tmp = `${dest}.tmp`;
+  writeFileSync(tmp, JSON.stringify(scrubbed, null, 2));
+  renameSync(tmp, dest);
+  unlinkSync(matchPath);
   return dest;
 }
 

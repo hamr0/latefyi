@@ -10,10 +10,11 @@
 // The client is dependency-injected via getClient(endpointName) so tests can
 // supply fakes and so primary/fallback can be swapped at runtime.
 
-import { readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, unlinkSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { poll, shouldPollNow, isTerminal } from './poll.js';
 import { dispatch } from './push.js';
+import { senderHash, scrubSender } from './users.js';
 
 function ensureDirs(stateDir, logDir) {
   for (const sub of ['active', 'done', 'errors']) mkdirSync(join(stateDir, sub), { recursive: true });
@@ -91,10 +92,13 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     summary.events += result.events.length;
 
     // Append events to push log (one JSON per line per PRD §11).
+    // Hash the sender — push.jsonl is long-lived and we don't want plaintext
+    // emails accumulating in a log file. The hash is enough to attribute /
+    // debug per-user delivery without retaining contact info.
     for (const evt of result.events) {
       appendFileSync(pushLog, JSON.stringify({
         msgid: record.msgid,
-        sender: record.sender,
+        senderHash: senderHash(record.sender),
         trainNum: record.request.trainNum,
         ...evt,
         at: result.snapshot?.pollTimestamp || new Date(now).toISOString(),
@@ -129,10 +133,14 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // Atomic write back (still in active/).
     atomicWrite(path, updatedRecord);
 
-    // Move to done/ if terminal.
+    // Move to done/ if terminal — and scrub the plaintext sender on the
+    // way. After this point, no done record holds an email address.
     if (isTerminal(result.updatedRecord, now)) {
       const dest = join(doneDir, f);
-      renameSync(path, dest);
+      const tmp = `${dest}.tmp`;
+      writeFileSync(tmp, JSON.stringify(scrubSender(updatedRecord), null, 2));
+      renameSync(tmp, dest);
+      unlinkSync(path);
       summary.terminal++;
     }
   }
