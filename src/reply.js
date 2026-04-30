@@ -37,6 +37,25 @@ function withFooter(body) {
   return `${body}\n\n${FOOTER}`;
 }
 
+// Inbox-grouping signals split into prefix (trip tag, before the route) and
+// suffix (ISO date, after the route, only when not today/tomorrow — the
+// receipt date already shows next to the subject for near-term trains).
+//   prefix: ` [trip]`
+//   suffix: ` — 2026-05-06`
+// `nowIso` lets tests inject a fixed clock; production passes nothing.
+function subjectTags({ trip, scheduledIso }, nowIso = new Date().toISOString()) {
+  const prefix = trip ? ` [${trip}]` : '';
+  let suffix = '';
+  if (scheduledIso) {
+    const trainYmd = scheduledIso.slice(0, 10);
+    const today = new Date(nowIso);
+    const yToday = today.toISOString().slice(0, 10);
+    const yTomorrow = new Date(today.getTime() + 86_400_000).toISOString().slice(0, 10);
+    if (trainYmd !== yToday && trainYmd !== yTomorrow) suffix = ` — ${trainYmd}`;
+  }
+  return { prefix, suffix };
+}
+
 // One-click stop links. Mail clients render bare `mailto:` URIs as tappable
 // links; clicking opens a fresh compose with `Subject: STOP <TRAIN>` already
 // filled, which the parser handles deterministically. The `body=` parameter
@@ -105,7 +124,10 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
 
   return reply({
     fromLocal: trainNum || 'help',
-    subject: `Tracking ${line} — ${fromName} → ${toName}`,
+    subject: (() => {
+      const { prefix, suffix } = subjectTags({ trip: resolved.trip, scheduledIso: dep });
+      return `Tracking ${line}${prefix} — ${fromName} → ${toName}${suffix}`;
+    })(),
     to: sender,
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
@@ -323,10 +345,12 @@ export function ntfyOptInReply({ topic, sender, incomingMsgid, ourMsgid, baseUrl
 
 // Threaded to the original confirmation so the user's mail client groups
 // all updates per-train into one collapsed conversation (PRD §6).
-export function pushReply({ event, line, trainNum, sender, confirmationMsgid, ourMsgid }) {
-  const subject = event.title || `${line || trainNum} update`;
+export function pushReply({ event, line, trainNum, trip, scheduledIso, sender, confirmationMsgid, ourMsgid }) {
+  const baseTitle = event.title || `${line || trainNum} update`;
+  const { prefix, suffix } = subjectTags({ trip: trip || event.trip, scheduledIso });
+  const subject = `${baseTitle}${prefix}${suffix}`;
   const baseBody = event.body || event.title || `${line || trainNum} update`;
-  const stopBlock = stopLinks(trainNum, event.trip);
+  const stopBlock = stopLinks(trainNum, trip || event.trip);
   return reply({
     fromLocal: trainNum || 'help',
     subject,

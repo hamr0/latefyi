@@ -45,12 +45,12 @@ function ntfyPayload(event, topic) {
 //   ntfyTopicValue    the user's ntfy topic (derived once at the call site)
 //   transport         { sendEmail, sendNtfy }
 //
-async function deliverOne({ event, userChannel, sender, line, trainNum, confirmationMsgid, ntfyTopicValue, transport }) {
+async function deliverOne({ event, userChannel, sender, line, trainNum, trip, scheduledIso, confirmationMsgid, ntfyTopicValue, transport }) {
   const channels = effectiveChannels(userChannel, event);
   const results = [];
 
   if (channels.has('email')) {
-    const msg = pushReply({ event, line, trainNum, sender, confirmationMsgid });
+    const msg = pushReply({ event, line, trainNum, trip, scheduledIso, sender, confirmationMsgid });
     try {
       await transport.sendEmail(msg);
       results.push({ channel: 'email', ok: true });
@@ -87,7 +87,7 @@ async function deliverOne({ event, userChannel, sender, line, trainNum, confirma
 // session and include a notice on the next email — but Phase 4 just exposes
 // the number; the §6 fallback notice happens in Phase 6 when ntfy is wired.
 //
-export async function dispatch({ events, sender, userChannel = 'email', line, trainNum,
+export async function dispatch({ events, sender, userChannel = 'email', line, trainNum, trip, scheduledIso,
                                  confirmationMsgid, transport, ntfyFailureCounter = 0 }) {
   const ntfyTopicValue = ntfyTopic(sender);
   const out = [];
@@ -95,7 +95,7 @@ export async function dispatch({ events, sender, userChannel = 'email', line, tr
 
   for (const event of events) {
     const channels = effectiveChannels(userChannel, event);
-    const results = await deliverOne({ event, userChannel, sender, line, trainNum, confirmationMsgid, ntfyTopicValue, transport });
+    const results = await deliverOne({ event, userChannel, sender, line, trainNum, trip, scheduledIso, confirmationMsgid, ntfyTopicValue, transport });
 
     // Roll the ntfy failure streak for fallback logic (§6).
     if (channels.has('ntfy')) {

@@ -125,6 +125,8 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
         userChannel,
         line: record.resolved?.line,
         trainNum: record.request.trainNum,
+        trip: record.resolved?.trip,
+        scheduledIso: record.resolved?.schedule?.scheduledDeparture,
         confirmationMsgid: record.confirmationMsgid,
         transport,
         ntfyFailureCounter: record.state?.ntfyFailureCounter || 0,
