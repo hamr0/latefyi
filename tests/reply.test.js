@@ -58,6 +58,18 @@ test('confirmation: mentions email delivery starting T-30', () => {
   assert.match(r.body, /Updates by email starting T-30/);
 });
 
+test('confirmation: tells user how to stop (no trip → just STOP)', () => {
+  const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b' });
+  assert.match(r.body, /Reply STOP to stop tracking/);
+});
+
+test('confirmation: with trip mentions both STOP and STOP TRIP <name>', () => {
+  const resolved = { ...sampleResolved(), trip: 'berlin-weekend' };
+  const r = confirmationReply({ resolved, sender: 'a@b' });
+  assert.match(r.body, /Reply STOP to stop this train/);
+  assert.match(r.body, /STOP TRIP berlin-weekend/);
+});
+
 test('confirmation: no ntfy/CHANNELS mentions while ntfy is paused', () => {
   const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', channel: 'ntfy' });
   assert.doesNotMatch(r.body, /ntfy/i);

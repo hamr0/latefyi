@@ -199,9 +199,14 @@ export function parse(email) {
     }
   }
 
-  // 2. STOP detection in body/subject (works for replies threaded to a confirmation,
-  //    e.g. user replies "STOP" to the tracking-confirmation email).
-  const stop = tryParseStop(headerSrc);
+  // 2. STOP detection. Two sources, in order:
+  //    a) the combined headerSrc (subject + first body line) — catches a
+  //       fresh email with `STOP` in the subject or as the only body line.
+  //    b) the body's first non-empty line in isolation — catches a reply
+  //       where the subject is `Re: Tracking ...` (which would block the
+  //       headerSrc match) and the user simply top-posted `STOP` above the
+  //       quoted original. This is the natural reply UX.
+  const stop = tryParseStop(headerSrc) || tryParseStop(firstNonEmptyLine(body));
   if (stop) {
     // If the local-part is a valid train number and STOP came alone, that train is the target.
     let scope = stop.scope;

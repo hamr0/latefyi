@@ -63,6 +63,9 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
 
   const tripLine = resolved.trip ? `\nTrip: ${resolved.trip}` : '';
   const updatesLine = `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.`;
+  const stopLine = resolved.trip
+    ? `Reply STOP to stop this train, or STOP TRIP ${resolved.trip} to stop the whole trip.`
+    : `Reply STOP to stop tracking.`;
 
   return reply({
     subject: `Tracking ${line} — ${fromName} → ${toName}`,
@@ -73,7 +76,7 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
     body:
       `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
       `Scheduled: dep ${fmtTime(dep)} ${fromName}, arr ${fmtTime(arr)} ${toName}.\n` +
-      updatesLine,
+      `${updatesLine}\n${stopLine}`,
   });
 }
 

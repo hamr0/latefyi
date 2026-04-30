@@ -187,6 +187,44 @@ test('STOP ALL', () => {
   assert.equal(r.scope, 'all');
 });
 
+// User replies to a confirmation. Subject becomes `Re: Tracking ...`,
+// body's first line is `STOP` above the quoted original. Subject contamination
+// used to block STOP detection — first-body-line fallback should catch it.
+test('STOP top-posted in reply with Re: subject → stop scope=single from local-part', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'Re: Tracking EUR 9316 — Amsterdam Centraal → Paris Nord',
+    body: 'STOP\n\n> Tracking EUR 9316, Amsterdam Centraal → Paris Nord.\n> Scheduled: ...',
+    headers: { 'In-Reply-To': '<conf-EUR9316@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'single');
+  assert.equal(r.target, 'EUR9316');
+});
+
+test('STOP TRIP top-posted in reply', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'Re: Tracking EUR 9316',
+    body: 'STOP TRIP berlin\n\n> quoted',
+    headers: { 'In-Reply-To': '<conf@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'trip');
+  assert.equal(r.target, 'berlin');
+});
+
+// Negative: a casual sentence containing the word "stop" must NOT trigger.
+test('reply body that mentions stop mid-sentence does not trigger STOP', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'Re: Tracking EUR 9316',
+    body: 'Please stop the tracking when I arrive.\n\n> quoted',
+    headers: { 'In-Reply-To': '<conf@late.fyi>' },
+  }));
+  assert.notEqual(r.kind, 'stop');
+});
+
 // ===== Reserved local-parts =====
 
 test('config@ + CHANNELS ntfy → config kind', () => {
