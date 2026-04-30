@@ -26,8 +26,13 @@ export function createSmtpTransport({ host, port = 587, user, pass, fromAddress 
   return {
     async sendEmail(msg) {
       const headers = msg.headers || {};
+      // Per-message From wins. The transport-level `fromAddress` is a
+      // last-resort default for messages that didn't set one — templates
+      // pick a routable, semantically-meaningful local-part (latefyi
+      // <<TRAINNUM>|stop|config|help@late.fyi>), and the transport must
+      // not paper over that.
       await tx.sendMail({
-        from: fromAddress || msg.from,
+        from: msg.from || fromAddress,
         to: msg.to,
         subject: msg.subject,
         text: msg.body,
