@@ -117,19 +117,19 @@ test('track happy path: resolves, schedules, returns confirmation', async () => 
   assert.equal(user.trains_tracked_count, 1);
 });
 
-test('track: confirmation reply uses the user\'s stored channel', async () => {
+test('track: confirmation reply is email-only while ntfy is paused', async () => {
   const { stateDir } = setup();
-  // Pre-create user with ntfy channel
+  // Even if user previously asked for ntfy, the system pins them to email.
   await handleInbound({
     email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }),
     stateDir, primaryClient: fakeOebb(),
   });
-  // Now track
   const r = await handleInbound({
     email: baseEmail({ subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
     stateDir, primaryClient: fakeOebb(),
   });
-  assert.match(r.body, /via ntfy/);
+  assert.doesNotMatch(r.body, /ntfy/i);
+  assert.match(r.body, /Updates by email/);
 });
 
 // ===== Track errors =====
@@ -165,28 +165,24 @@ test('track: station not on route → station-not-on-route reply', async () => {
 
 // ===== Config =====
 
-test('config: CHANNELS ntfy first time → ntfy opt-in reply with QR', async () => {
+test('config: CHANNELS ntfy → paused notice (ntfy is deferred)', async () => {
   const { stateDir } = setup();
   const r = await handleInbound({
     email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }),
     stateDir, primaryClient: fakeOebb(),
   });
-  assert.match(r.subject, /ntfy enabled/);
-  assert.match(r.body, /https:\/\/ntfy\.sh\/latefyi-/);
+  assert.match(r.subject, /paused/i);
+  assert.doesNotMatch(r.body, /ntfy\.sh/);
 });
 
-test('config: CHANNELS email after ntfy opt-in → simple confirmation, no QR', async () => {
+test('config: CHANNELS email → simple confirmation', async () => {
   const { stateDir } = setup();
-  await handleInbound({
-    email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }),
-    stateDir, primaryClient: fakeOebb(),
-  });
   const r = await handleInbound({
     email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS email' }),
     stateDir, primaryClient: fakeOebb(),
   });
   assert.match(r.subject, /Channel updated to email/);
-  assert.equal(/ntfy\.sh/.test(r.body), false);
+  assert.doesNotMatch(r.body, /ntfy/i);
 });
 
 // ===== STOP variants =====

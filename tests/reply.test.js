@@ -51,23 +51,17 @@ test('In-Reply-To header is set when incomingMsgid provided', () => {
   assert.equal(r.headers['In-Reply-To'], '<incoming@late.fyi>');
 });
 
-// ===== confirmation: channel-aware blurb =====
+// ===== confirmation: delivery blurb (ntfy deferred — email-only) =====
 
-test('confirmation: default email channel mentions email + nudge to ntfy', () => {
+test('confirmation: mentions email delivery starting T-30', () => {
   const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b' });
-  assert.match(r.body, /by email/i);
-  assert.match(r.body, /CHANNELS ntfy/);
+  assert.match(r.body, /Updates by email starting T-30/);
 });
 
-test('confirmation: ntfy channel says push starts T-30, offers email switch', () => {
+test('confirmation: no ntfy/CHANNELS mentions while ntfy is paused', () => {
   const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', channel: 'ntfy' });
-  assert.match(r.body, /Push starts T-30/);
-  assert.match(r.body, /CHANNELS email/);
-});
-
-test('confirmation: both channel mentions both', () => {
-  const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', channel: 'both' });
-  assert.match(r.body, /both email and ntfy/);
+  assert.doesNotMatch(r.body, /ntfy/i);
+  assert.doesNotMatch(r.body, /CHANNELS/);
 });
 
 test('confirmation: T-30 time computed from scheduledDeparture', () => {
@@ -97,7 +91,6 @@ test('missing context: surfaces all syntax options + example', () => {
   assert.match(r.body, /To:/);
   assert.match(r.body, /On:/);
   assert.match(r.body, /Trip:/);
-  assert.match(r.body, /Channels:/);
   assert.match(r.body, /Example:/);
 });
 

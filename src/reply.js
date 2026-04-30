@@ -52,7 +52,8 @@ function reply({ subject, body, to, inReplyTo, references, msgid, replyTo }) {
 
 // ---- §7: confirmation (happy path) ----
 
-export function confirmationReply({ resolved, sender, channel = 'email', incomingMsgid, ourMsgid, trainNum }) {
+// `channel` is accepted but unused while ntfy is deferred — keeps callers stable.
+export function confirmationReply({ resolved, sender, channel: _channel = 'email', incomingMsgid, ourMsgid, trainNum }) {
   const line = resolved.line || resolved.trainNum;
   const fromName = resolved.from || '?';
   const toName = resolved.to || '?';
@@ -60,13 +61,8 @@ export function confirmationReply({ resolved, sender, channel = 'email', incomin
   const arr = resolved.schedule?.scheduledArrival;
   const t30 = dep ? new Date(new Date(dep).getTime() - 30 * 60 * 1000) : null;
 
-  const channelBlurb = channel === 'ntfy'
-    ? `Push starts T-30 at ${t30 ? fmtTime(t30) : '?'} via ntfy.\nReply CHANNELS email to switch back.`
-    : channel === 'both'
-      ? `Updates by both email and ntfy starting T-30 at ${t30 ? fmtTime(t30) : '?'}.\nReply CHANNELS email or CHANNELS ntfy to change.`
-      : `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.\nReply CHANNELS ntfy or CHANNELS both to switch delivery.`;
-
   const tripLine = resolved.trip ? `\nTrip: ${resolved.trip}` : '';
+  const updatesLine = `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.`;
 
   return reply({
     subject: `Tracking ${line} — ${fromName} → ${toName}`,
@@ -77,7 +73,7 @@ export function confirmationReply({ resolved, sender, channel = 'email', incomin
     body:
       `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
       `Scheduled: dep ${fmtTime(dep)} ${fromName}, arr ${fmtTime(arr)} ${toName}.\n` +
-      channelBlurb,
+      updatesLine,
   });
 }
 
@@ -98,8 +94,7 @@ export function missingContextReply({ trainNum, sender, incomingMsgid, ourMsgid 
       `  (just From: works too — we'll track to the train's terminus)\n\n` +
       `Optional headers (combine freely, comma-separated, in subject):\n` +
       `  On: 2026-05-04         travelling later (ISO date or "5 May 2026", up to 90 days ahead)\n` +
-      `  Trip: <name>           tag for grouping; STOP TRIP <name> tears the chain down\n` +
-      `  Channels: ntfy|both    one-shot delivery override\n\n` +
+      `  Trip: <name>           tag for grouping; STOP TRIP <name> tears the chain down\n\n` +
       `Example:\n` +
       `  Subject: From: Amsterdam, To: Berlin Ostbahnhof, On: 2026-05-04, Trip: berlin-weekend\n\n` +
       `Headers are case-insensitive and can also go in the body's first non-empty line.`,

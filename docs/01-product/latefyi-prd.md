@@ -1,7 +1,11 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.8.1
-**Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone. Privacy contract is literal: trip ends → address AND record both deleted, no archive. Disambiguation completion (numbered/named replies) wired end-to-end with `Reply-To` threading. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. **Operator metrics**: daily snapshot (`scripts/stats.sh`) + weekly digest email (`scripts/stats-email.sh`) — aggregate counters only, no per-user/per-trip detail. 234/234 tests pass. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
+**Version:** 1.9.0
+**Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone. Privacy contract is literal: trip ends → address AND record both deleted, no archive. Disambiguation completion (numbered/named replies) wired end-to-end with `Reply-To` threading. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. **Operator metrics**: daily snapshot (`scripts/stats.sh`) + weekly digest email (`scripts/stats-email.sh`) — aggregate counters only, no per-user/per-trip detail. 239/239 tests pass.
+
+**Deferred in v1.9.0 — ntfy push notifications.** The full code path (per-user derived topic, opt-in QR/deep-link reply, push transport, fail-streak counter) is intact, but no longer surfaced in user-facing copy. Real-world testing showed that even with the designed onboarding (`CHANNELS ntfy` → reply with `ntfy://subscribe/<topic>` deep link + `https://ntfy.sh/<topic>` fallback), the deep link is dead on a fresh device (no ntfy app registered for the scheme) and the HTTPS fallback drops users into a no-push browser tab. "No extra setup, ever" is not honest until we either (a) ship a hosted PWA that owns the scheme + handles web push, or (b) replace ntfy with first-party web push. Until then: `config@late.fyi` accepts `CHANNELS ntfy` but replies "ntfy delivery is paused" and pins the user to email; confirmation/missing-context bodies omit any ntfy/CHANNELS mention.
+
+Outstanding: 30-day soak.
 
 See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr
@@ -182,6 +186,8 @@ Exception: large terminal stations (Paris-Nord, Gare de Lyon, Frankfurt Hbf, Rom
 ---
 
 ## 6. Notification Channels
+
+> **Deferred (v1.9.0):** ntfy is paused in user-facing copy. Effective channel is `email` for all users; `CHANNELS ntfy`/`both` requests are accepted at `config@late.fyi` but reply with a "paused" notice. The rest of this section describes the designed-and-implemented behavior, retained for the re-enable. See the **Deferred** banner at the top of this PRD for why and the conditions for un-pausing.
 
 Three channels, configurable per-user (lifetime preference) or per-request (one-shot override).
 

@@ -223,21 +223,24 @@ function handleStop({ email, parsed, stateDir }) {
 
 function handleConfig({ email, parsed, stateDir }) {
   if (parsed.field === 'channels') {
-    const { record, wasFirstNtfyOptIn } = setChannel(email.from, parsed.value, stateDir);
-    if (wasFirstNtfyOptIn) {
-      return ntfyOptInReply({
-        topic: record.ntfy_topic,
-        sender: email.from,
-        incomingMsgid: email.msgid, ourMsgid: newMsgid(),
-      });
+    // ntfy is paused — accept the request but force email-only and tell the
+    // user. Code path is intact for re-enable; just no user-facing surface.
+    if (parsed.value !== 'email') {
+      setChannel(email.from, 'email', stateDir);
+      return {
+        from: `noreply@${DOMAIN}`,
+        to: email.from,
+        subject: `ntfy delivery is paused`,
+        body: `Push notifications via ntfy are temporarily disabled while we work on a smoother setup. You'll keep getting train updates by email.\n\nNo action needed.`,
+        headers: { 'In-Reply-To': email.msgid, 'Message-ID': newMsgid() },
+      };
     }
-    // Plain confirmation that channel changed — keep using the confirmation
-    // template since the user just expects a "got it, now using X" reply.
+    setChannel(email.from, 'email', stateDir);
     return {
       from: `noreply@${DOMAIN}`,
       to: email.from,
-      subject: `Channel updated to ${parsed.value}`,
-      body: `Your delivery channel is now: ${parsed.value}.\n\nReply CHANNELS email | ntfy | both at any time to change.`,
+      subject: `Channel updated to email`,
+      body: `Your delivery channel is now: email.`,
       headers: { 'In-Reply-To': email.msgid, 'Message-ID': newMsgid() },
     };
   }
