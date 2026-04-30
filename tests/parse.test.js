@@ -203,19 +203,54 @@ test('STOP <TRAIN> in subject with non-empty body (signature) → still parses',
   assert.equal(r.target, 'EUR9316');
 });
 
-// Replying STOP to a confirmation is intentionally not parsed — mail-client
-// attribution lines and quoted-content boundaries make it unreliable. Users
-// stop via the one-click mailto: link in every outbound email, which lands
-// here as a fresh email with `Subject: STOP <TRAIN>` (covered by tests above).
-test('reply with STOP top-posted is NOT auto-parsed (mailto is the canonical way)', () => {
+// Reply-STOP silent fallback. Mailto is the advertised path, but if a user
+// hits Reply by reflex and types STOP (top-posted), it should also work.
+test('reply-STOP top-posted to <TRAIN>@ resolves via local-part', () => {
   const r = parse(email({
     to: 'EUR9316@late.fyi',
     subject: 'Re: Tracking EUR 9316 — Amsterdam Centraal → Paris Nord',
     body: 'STOP\n\n> Tracking EUR 9316, Amsterdam Centraal → Paris Nord.\n> Scheduled: ...',
     headers: { 'In-Reply-To': '<conf-EUR9316@late.fyi>' },
   }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'single');
+  assert.equal(r.target, 'EUR9316');
+});
+
+test('reply-STOP TRIP top-posted', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'Re: Tracking EUR 9316',
+    body: 'STOP TRIP berlin\n\n> quoted',
+    headers: { 'In-Reply-To': '<conf@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'trip');
+  assert.equal(r.target, 'berlin');
+});
+
+test('reply-STOP ALL top-posted', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'Re: Tracking EUR 9316',
+    body: 'STOP ALL\n\n> quoted',
+    headers: { 'In-Reply-To': '<conf@late.fyi>' },
+  }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'all');
+});
+
+// Negative: prose containing the word "stop" must NOT trigger a stop.
+test('reply body that mentions stop mid-sentence does not trigger STOP', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'Re: Tracking EUR 9316',
+    body: 'Please stop the tracking when I arrive.\n\n> quoted',
+    headers: { 'In-Reply-To': '<conf@late.fyi>' },
+  }));
   assert.notEqual(r.kind, 'stop');
 });
+
 
 // ===== Reserved local-parts =====
 

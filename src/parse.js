@@ -204,13 +204,13 @@ export function parse(email) {
     }
   }
 
-  // 2. STOP detection from headerSrc (subject + first body line). The
-  //    canonical way to stop is to click the mailto: link in any outbound
-  //    email — that opens a fresh compose with `Subject: STOP <TRAIN>`,
-  //    which lands here as a clean match. Replying STOP to a confirmation
-  //    is intentionally not handled: client-specific attribution lines and
-  //    quoted-content boundaries make it unreliable across mail clients.
-  const stop = tryParseStop(headerSrc);
+  // 2. STOP detection. The canonical UX is the mailto: link in every
+  //    outbound email (clean Subject: STOP <TRAIN>). Reply-STOP is a
+  //    silent fallback for users who hit Reply by reflex — works when
+  //    the first non-empty body line starts with STOP (top-posted),
+  //    fails gracefully for clients that hoist attribution above the
+  //    user's text. Not advertised in copy; the mailto link is.
+  const stop = tryParseStop(headerSrc) || tryParseStop(firstNonEmptyLine(body));
   if (stop) {
     // If the local-part is a valid train number and STOP came alone, that train is the target.
     let scope = stop.scope;
