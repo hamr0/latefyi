@@ -132,12 +132,13 @@ test('valid train numbers across operators', () => {
 // ===== Trip tag validation =====
 
 test('trip tag with disallowed chars → error', () => {
+  // Trip values fail validation on chars outside [A-Za-z0-9_-]. Forgiving
+  // header parsing splits on the next keyword/comma/EOL, so "foo!bar" stays
+  // as a single value (no internal split) and TRIP_RE rejects the `!`.
   const r = parse(email({
     to: 'ICE145@late.fyi',
-    subject: 'From: A, Trip: my trip!',
+    subject: 'From: A, Trip: foo!bar',
   }));
-  // "my" alone before the space is captured by HEADER_RE (header is `[^,\n\r]+`),
-  // so we get "my trip!" as the trip value — which fails validation.
   assert.equal(r.kind, 'error');
   assert.equal(r.code, 'invalid_trip');
 });
@@ -336,4 +337,37 @@ test('parse() returns onDate=null when On: absent', () => {
   }));
   assert.equal(r.kind, 'track');
   assert.equal(r.onDate, null);
+});
+
+// ===== Forgiving syntax (no colons, no commas) =====
+
+test('forgiving: "from amsterdam to berlin" without colons or commas', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'from amsterdam to berlin ostbahnhof',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'amsterdam');
+  assert.equal(r.to, 'berlin ostbahnhof');
+});
+
+test('forgiving: "from X to Y on DATE" all bare', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'from amsterdam to paris nord on 2026-05-06',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'amsterdam');
+  assert.equal(r.to, 'paris nord');
+  assert.equal(r.onDate, '2026-05-06');
+});
+
+test('forgiving: mixed colon and bare (e.g. From: X, to Y)', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam, to Berlin Ostbahnhof',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'Amsterdam');
+  assert.equal(r.to, 'Berlin Ostbahnhof');
 });

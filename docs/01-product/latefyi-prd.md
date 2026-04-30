@@ -106,8 +106,13 @@ A user who wants faster, app-style push notifications instead of (or in addition
 ### Rules
 
 - Local part is the train number. Required. Uppercase, alphanumeric, no whitespace. Examples: `RE19750`, `9876`, `ICE104`, `ES9114`, `TGV6201`
-- `From:`, `To:`, and `Trip:` may appear in the **email subject line** (preferred) or in the **email body's first non-empty line**. Headers are key-colon-value, comma-separated.
+- `From:`, `To:`, and `Trip:` may appear in the **email subject line** (preferred) or in the **email body's first non-empty line**. The classic form is key-colon-value, comma-separated.
 - **Header keys are case-insensitive.** `From:`, `from:`, `FROM:`, `tO:` all parse identically. Values are normalized for matching but preserved verbatim for replies.
+- **Forgiving parsing**: colons and commas are optional. The parser splits on keyword boundaries (`from` / `to` / `on` / `trip` / `channels`), so all of these work:
+  - `From: Amsterdam, To: Berlin Ostbahnhof` (classic)
+  - `from amsterdam to berlin ostbahnhof` (no colons, no commas)
+  - `from amsterdam to paris nord on 2026-05-06` (all bare)
+  - `From: Amsterdam to Berlin On: 2026-05-04` (mixed)
 - Station names are matched case-insensitively against the resolved train's stop sequence using fuzzy match (Levenshtein ≤ 2 against canonical names + known aliases).
 - `Trip:` is an optional free-text tag (alphanumeric + dash/underscore, ≤32 chars) that groups multiple per-train tracking requests for batch operations like `STOP TRIP <name>`. Trips are not validated against any list — any string the user picks works. See §7 for STOP semantics.
 - `On: <date>` is an optional advance-planning header. Accepted formats: ISO `2026-05-04`, or day-month-year with **named month** like `5 May 2026`, `5-May-2026`, `05-May-26`. Pure-numeric forms like `05/04/26` are **rejected** (US vs EU ambiguity). The date must be today or future, max 90 days ahead (HAFAS doesn't publish further). When `On:` is set, the request is resolved against that day's HAFAS data; the record sits in `state/pending/` until T-30 of the actual departure, then activates on the existing wake-up cron. When absent, HAFAS picks the nearest run (today or tomorrow).

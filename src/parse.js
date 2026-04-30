@@ -22,7 +22,14 @@ const TRIP_RE     = /^[A-Za-z0-9_-]{1,32}$/;
 const RESERVED_LOCALPARTS = new Set(['config', 'stop', 'help']);
 const VALID_CHANNELS = new Set(['email', 'ntfy', 'both']);
 
-const HEADER_RE = /(from|to|trip|channels|on)\s*:\s*([^,\n\r]+)/gi;
+// Forgiving header extractor. Matches `<keyword>` (with or without `:`),
+// captures the value lazily up to the next keyword, comma, or end of line.
+// Accepts all of these:
+//   "From: Amsterdam, To: Berlin Ostbahnhof"
+//   "from amsterdam to berlin ostbahnhof"
+//   "from amsterdam to paris nord on 2026-05-06"
+//   "From Amsterdam, To Berlin, On 2026-05-04"
+const HEADER_RE = /\b(from|to|trip|channels|on)\b[\s:]+([^,\n\r]+?)(?=\s+\b(?:from|to|trip|channels|on)\b|\s*[,\n\r]|\s*$)/gi;
 
 const MONTHS = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
