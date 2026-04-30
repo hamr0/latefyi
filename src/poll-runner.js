@@ -114,7 +114,11 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // success — it always records what *would* have been sent.
     let updatedRecord = result.updatedRecord;
     if (transport && getUserChannel && result.events.length > 0) {
-      const userChannel = getUserChannel(record.sender) || 'email';
+      // ntfy is deferred — force email regardless of stored preference so
+      // existing users with channel:'ntfy' don't fall into a silent void.
+      // Remove this override (and revert to: getUserChannel(record.sender) || 'email')
+      // when ntfy push is un-paused.
+      const userChannel = 'email';
       const dispatchResults = await dispatch({
         events: result.events,
         sender: record.sender,
