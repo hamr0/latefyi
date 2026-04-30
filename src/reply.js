@@ -6,7 +6,16 @@
 // All replies end with FOOTER (single source of truth).
 
 const DOMAIN = 'late.fyi';
-const FROM_ADDRESS = `noreply@${DOMAIN}`;
+const DISPLAY_NAME = 'latefyi';
+
+// Build the "From:" header. The local-part is meaningful — it's the address
+// the user's Reply will go to. We choose it per template so a Reply lands
+// somewhere routable instead of `noreply@` (which the Cloudflare worker
+// drops via NON_TRACKING_LOCALPARTS as defense-in-depth). Display name keeps
+// the inbox sender clean ("latefyi" instead of bare local-part).
+function fromAddress(localPart = 'noreply') {
+  return `${DISPLAY_NAME} <${localPart}@${DOMAIN}>`;
+}
 
 export const FOOTER = `— late.fyi
 feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
@@ -52,21 +61,19 @@ function stopLinks(trainNum, trip) {
   return lines.join('\n');
 }
 
-function reply({ subject, body, to, inReplyTo, references, msgid, replyTo }) {
+function reply({ subject, body, to, inReplyTo, references, msgid, replyTo, fromLocal }) {
   const headers = {};
   if (inReplyTo) {
     headers['In-Reply-To'] = inReplyTo;
     headers['References'] = references || inReplyTo;
   }
   if (msgid) headers['Message-ID'] = msgid;
-  // Reply-To routes the user's "Reply" back to a local-part the worker will
-  // accept (typically <TRAINNUM>@late.fyi or stop@late.fyi). Without this,
-  // their Reply goes to `noreply@` which the worker drops (defense-in-depth
-  // in NON_TRACKING_LOCALPARTS). Setting Reply-To preserves the threading
-  // UX while keeping noreply@ unreplyable.
+  // Reply-To is now redundant when From: itself uses a routable local-part
+  // (the new pattern). Kept for legacy callers and as defense-in-depth: if
+  // a client doesn't honor Reply-To, From: is the fallback and now also routes.
   if (replyTo) headers['Reply-To'] = replyTo;
   return {
-    from: FROM_ADDRESS,
+    from: fromAddress(fromLocal),
     to,
     subject,
     body: withFooter(body),
@@ -89,7 +96,15 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
   const updatesLine = `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.`;
   const stopBlock = stopLinks(trainNum, resolved.trip);
 
+  // Surface platform + status fields up front to set expectations: confirmation
+  // is the schedule; live data (operator-assigned platform, real-time delay)
+  // arrives at T-30 when polling kicks in. "TBC" = to be confirmed.
+  const depPlat = resolved.departurePlatform || 'TBC';
+  const arrPlat = resolved.arrivalPlatform || 'TBC';
+  const status  = resolved.status || 'TBC';
+
   return reply({
+    fromLocal: trainNum || 'help',
     subject: `Tracking ${line} — ${fromName} → ${toName}`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -98,6 +113,8 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
     body:
       `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
       `Scheduled: dep ${fmtTime(dep)} ${fromName}, arr ${fmtTime(arr)} ${toName}.\n` +
+      `Departure platform: ${depPlat}    Arrival platform: ${arrPlat}\n` +
+      `Status: ${status}\n` +
       `${updatesLine}\n\n${stopBlock}`,
   });
 }
@@ -106,6 +123,7 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
 
 export function missingContextReply({ trainNum, sender, incomingMsgid, ourMsgid }) {
   return reply({
+    fromLocal: 'help',
     subject: `Need more info for ${trainNum}`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -131,6 +149,7 @@ export function missingContextReply({ trainNum, sender, incomingMsgid, ourMsgid 
 export function trainNotFoundReply({ trainNum, sender, incomingMsgid, ourMsgid, onDate }) {
   const window = onDate ? `on ${onDate}` : 'today or tomorrow';
   return reply({
+    fromLocal: trainNum || 'help',
     subject: `Can't find train ${trainNum}`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -157,6 +176,7 @@ export function stationNotOnRouteReply({ trainNum, line, station, route, suggest
   const routeLine = (route || []).join(' → ');
   const suggestionLine = suggestion ? `Closest match: ${suggestion}.\n` : '';
   return reply({
+    fromLocal: trainNum || 'help',
     subject: `${station} not on ${line || trainNum}'s route`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -173,6 +193,7 @@ export function stationNotOnRouteReply({ trainNum, line, station, route, suggest
 export function ambiguousStationReply({ trainNum, line, station, candidates, sender, incomingMsgid, ourMsgid }) {
   const numbered = candidates.map((c, i) => `  ${i + 1}. ${c}`).join('\n');
   return reply({
+    fromLocal: trainNum || 'help',
     subject: `Which ${station} for ${line || trainNum}?`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -192,6 +213,7 @@ export function ambiguousStationReply({ trainNum, line, station, candidates, sen
 
 export function alreadyArrivedReply({ trainNum, line, toStation, arrivedAt, sender, incomingMsgid, ourMsgid }) {
   return reply({
+    fromLocal: trainNum || 'help',
     subject: `${line || trainNum} already arrived`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -213,6 +235,7 @@ function fmtDateTime(iso) {
 export function rateLimitedReply({ reason, retryAt, sender, incomingMsgid, ourMsgid }) {
   const window = reason === 'hourly' ? 'in the last hour' : 'in the last 24 hours';
   return reply({
+    fromLocal: 'help',
     subject: `Too many tracking requests`,
     to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
     body:
@@ -224,6 +247,7 @@ export function rateLimitedReply({ reason, retryAt, sender, incomingMsgid, ourMs
 
 export function tooManyActiveReply({ count, max, sender, incomingMsgid, ourMsgid }) {
   return reply({
+    fromLocal: 'stop',
     subject: `Too many active trains`,
     to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
     body:
@@ -236,6 +260,7 @@ export function tooManyActiveReply({ count, max, sender, incomingMsgid, ourMsgid
 
 export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {
   return reply({
+    fromLocal: 'help',
     subject: `Sender not allowlisted`,
     to: sender,
     inReplyTo: incomingMsgid,
@@ -251,6 +276,7 @@ export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {
 export function stopReply({ scope, target, count, trains, sender, incomingMsgid, ourMsgid }) {
   if (scope === 'all') {
     return reply({
+      fromLocal: 'stop',
       subject: `Stopped all tracking`,
       to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
       body: `Cleared ${count} active trains. No more updates until you start fresh.`,
@@ -259,6 +285,7 @@ export function stopReply({ scope, target, count, trains, sender, incomingMsgid,
   if (scope === 'trip') {
     const list = (trains || []).map(t => `  - ${t.line || t.trainNum}${t.from && t.to ? ` (${t.from} → ${t.to})` : ''}`).join('\n');
     return reply({
+      fromLocal: 'stop',
       subject: `Stopped trip "${target}"`,
       to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
       body: `Cleared ${count} train${count === 1 ? '' : 's'} from trip "${target}":\n${list || '  (none)'}`,
@@ -266,6 +293,7 @@ export function stopReply({ scope, target, count, trains, sender, incomingMsgid,
   }
   // single
   return reply({
+    fromLocal: 'stop',
     subject: `Stopped tracking ${target}`,
     to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
     body: `OK, no more updates for ${target}.`,
@@ -278,6 +306,7 @@ export function ntfyOptInReply({ topic, sender, incomingMsgid, ourMsgid, baseUrl
   const url = `${baseUrl}/${topic}`;
   const deepLink = `ntfy://subscribe/${topic}`;
   return reply({
+    fromLocal: 'config',
     subject: `ntfy enabled for late.fyi`,
     to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
     body:
@@ -299,6 +328,7 @@ export function pushReply({ event, line, trainNum, sender, confirmationMsgid, ou
   const baseBody = event.body || event.title || `${line || trainNum} update`;
   const stopBlock = stopLinks(trainNum, event.trip);
   return reply({
+    fromLocal: trainNum || 'help',
     subject,
     to: sender,
     inReplyTo: confirmationMsgid,
@@ -313,6 +343,7 @@ export function pushReply({ event, line, trainNum, sender, confirmationMsgid, ou
 
 export function genericErrorReply({ trainNum, code, message, sender, incomingMsgid, ourMsgid }) {
   return reply({
+    fromLocal: trainNum && trainNum !== '(unknown)' ? trainNum : 'help',
     subject: `Couldn't track ${trainNum}`,
     to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
     body:

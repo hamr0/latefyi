@@ -33,9 +33,12 @@ test('FOOTER identifies the service and surfaces feedback + privacy claim', () =
 
 // ===== from / to / threading =====
 
-test('reply.from is noreply@late.fyi', () => {
+test('reply.from uses latefyi <local@late.fyi> with routable local-part', () => {
+  // No trainNum → falls back to help@; with trainNum, From = the train address.
   const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b' });
-  assert.equal(r.from, 'noreply@late.fyi');
+  assert.equal(r.from, 'latefyi <help@late.fyi>');
+  const r2 = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', trainNum: 'EUR9316' });
+  assert.equal(r2.from, 'latefyi <EUR9316@late.fyi>');
 });
 
 test('reply.to is the original sender', () => {

@@ -88,7 +88,7 @@ test('allowlist: empty/null = open (single-tenant default)', async () => {
     allowlist: null,
   });
   assert.ok(r);
-  assert.equal(r.from, 'noreply@late.fyi');
+  assert.match(r.from, /^latefyi <[a-z0-9]+@late\.fyi>$/i);
 });
 
 // ===== Track happy path =====
