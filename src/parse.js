@@ -113,6 +113,19 @@ function extractHeaders(src) {
   return out;
 }
 
+// If no `on` keyword was found, look for a bare date anywhere in the source
+// and inject an `on ` prefix before it so the next extraction pass picks it
+// up. Lets users write `from X to Y 2026-05-04` without the `on` keyword.
+// ISO is tried first; if absent, fall back to named-month form.
+function injectOnBeforeBareDate(src) {
+  const iso = src.replace(/(\b\d{4}-\d{2}-\d{2}\b)/, 'on $1');
+  if (iso !== src) return iso;
+  return src.replace(
+    /(\b\d{1,2}[\s\-\/]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s\-\/]+\d{2,4}\b)/i,
+    'on $1'
+  );
+}
+
 function getInReplyTo(headers) {
   if (!headers) return null;
   // Email headers are conventionally case-insensitive
@@ -223,8 +236,14 @@ export function parse(email) {
              message: `local-part "${localPart}" is not a valid train number (expected up to 4 letters + 2-5 digits)` };
   }
 
-  // 5. Header extraction.
-  const headers = extractHeaders(headerSrc);
+  // 5. Header extraction. Two-pass: if `on` is absent but a bare date is
+  // present, inject an `on ` prefix so the second pass picks it up cleanly
+  // (and prevents a trailing date from being swallowed into to:).
+  let headers = extractHeaders(headerSrc);
+  if (!headers.on) {
+    const withOn = injectOnBeforeBareDate(headerSrc);
+    if (withOn !== headerSrc) headers = extractHeaders(withOn);
+  }
 
   // 6. Mode determination.
   let mode;

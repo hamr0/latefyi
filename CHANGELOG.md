@@ -11,12 +11,15 @@ This project tracks two streams in lockstep:
 ## [Unreleased]
 
 ### Forgiving subject parser
-- Colons and commas are now optional. The parser splits on keyword boundaries (`from` / `to` / `on` / `trip` / `channels`) and captures values lazily up to the next keyword, comma, or end of line. All of these work:
+- Colons and commas are now optional. The parser splits on keyword boundaries (`from` / `to` / `on` / `trip` / `channels`) and captures values lazily up to the next keyword, comma, or end of line.
+- **Bare dates auto-detected.** If no `on` keyword is present, an ISO `2026-05-04` or named-month (`5 May 2026`) date anywhere in the subject is auto-tagged as the `on` value. Two-pass extraction: a bare date that would otherwise be swallowed into the `to:` value is recovered. All of these work:
   - `From: Amsterdam, To: Berlin Ostbahnhof` (classic)
   - `from amsterdam to berlin ostbahnhof` (bare)
-  - `from amsterdam to paris nord on 2026-05-06` (all bare, with date)
+  - `from amsterdam to paris nord on 2026-05-06` (all bare, with date keyword)
+  - `from amsterdam to paris nord 2026-05-06` (bare date, no `on`)
+  - `from amsterdam to paris nord 5 May 2026` (bare named-month)
   - `From: Amsterdam to Berlin On: 2026-05-04` (mixed)
-- 3 new tests; 237/237 pass.
+- 6 new tests; 240/240 pass.
 
 ### Operator metrics — daily snapshot + weekly digest
 - `scripts/stats.sh` — daily cron job (00:05 UTC) appends one JSON line to `state/stats/daily.jsonl` with absolute counters: `users_total`, `trips_total`, `active_users`, `active_trips`, `events_total`. Idempotent (skips if today's row already written). Computed from existing state — no new retention. Privacy-safe: no per-user / per-trip detail.

@@ -371,3 +371,34 @@ test('forgiving: mixed colon and bare (e.g. From: X, to Y)', () => {
   assert.equal(r.from, 'Amsterdam');
   assert.equal(r.to, 'Berlin Ostbahnhof');
 });
+
+test('forgiving: bare ISO date is auto-tagged as on', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'from amsterdam to paris nord 2026-05-06',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'amsterdam');
+  assert.equal(r.to, 'paris nord');
+  assert.equal(r.onDate, '2026-05-06');
+});
+
+test('forgiving: bare named-month date is auto-tagged as on', () => {
+  const r = parse(email({
+    to: 'EUR9316@late.fyi',
+    subject: 'from amsterdam to paris nord 5 May 2026',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.from, 'amsterdam');
+  assert.equal(r.to, 'paris nord');
+  assert.equal(r.onDate, '2026-05-05');
+});
+
+test('forgiving: explicit On: still wins (no double-injection)', () => {
+  const r = parse(email({
+    to: 'ICE145@late.fyi',
+    subject: 'From: Amsterdam, To: Berlin, On: 2026-05-04',
+  }));
+  assert.equal(r.kind, 'track');
+  assert.equal(r.onDate, '2026-05-04');
+});
