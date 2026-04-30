@@ -1,7 +1,7 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.8.0
-**Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone. Privacy contract is literal: trip ends → address AND record both deleted, no archive. `done/` and `errors/` directories are gone. Disambiguation completion (numbered/named replies) is wired end-to-end with `Reply-To` so user replies thread back through `<TRAINNUM>@late.fyi`. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. 234/234 tests pass. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
+**Version:** 1.8.1
+**Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone. Privacy contract is literal: trip ends → address AND record both deleted, no archive. Disambiguation completion (numbered/named replies) wired end-to-end with `Reply-To` threading. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. **Operator metrics**: daily snapshot (`scripts/stats.sh`) + weekly digest email (`scripts/stats-email.sh`) — aggregate counters only, no per-user/per-trip detail. 234/234 tests pass. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
 
 See `CHANGELOG.md` for the full revision history. See `docs/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr

@@ -10,6 +10,11 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Operator metrics — daily snapshot + weekly digest
+- `scripts/stats.sh` — daily cron job (00:05 UTC) appends one JSON line to `state/stats/daily.jsonl` with absolute counters: `users_total`, `trips_total`, `active_users`, `active_trips`, `events_total`. Idempotent (skips if today's row already written). Computed from existing state — no new retention. Privacy-safe: no per-user / per-trip detail.
+- `scripts/stats-email.sh` — weekly cron (Mondays 00:07 UTC). Picks the latest snapshot from each of the last 4 ISO weeks (4 rows, not 30 daily) and emails a plain-text digest via the VPS postfix (DKIM-signed). Recipient via `LATEFYI_STATS_TO` (default `avoidaccess@gmail.com`).
+- Cron entries land at `/etc/cron.d/latefyi-stats`. First snapshot recorded on production VPS; first weekly digest sent and confirmed delivered to Gmail.
+
 ### Implementation: 0.8.0 — privacy retention zero + disambiguation completion + open allowlist
 
 **Privacy: delete on terminal (no retention).**
