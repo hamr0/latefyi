@@ -187,6 +187,22 @@ test('STOP ALL', () => {
   assert.equal(r.scope, 'all');
 });
 
+// Regression: a STOP subject followed by a body (signature, etc.) used to
+// fail because the parser regex required the input to end-of-string after
+// STOP <stuff>, but headerSource concatenates subject + first body line with
+// a newline. Mailto-stop link to a Thunderbird user with a "-- Ciao" sig
+// triggered this.
+test('STOP <TRAIN> in subject with non-empty body (signature) → still parses', () => {
+  const r = parse(email({
+    to: 'stop@late.fyi',
+    subject: 'STOP EUR9316',
+    body: '\n-- \nCiao, Amr\n',
+  }));
+  assert.equal(r.kind, 'stop');
+  assert.equal(r.scope, 'single');
+  assert.equal(r.target, 'EUR9316');
+});
+
 // Replying STOP to a confirmation is intentionally not parsed — mail-client
 // attribution lines and quoted-content boundaries make it unreliable. Users
 // stop via the one-click mailto: link in every outbound email, which lands

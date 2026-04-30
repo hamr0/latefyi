@@ -142,9 +142,14 @@ function getInReplyTo(headers) {
 // Source can be subject or body; case-insensitive.
 function tryParseStop(src) {
   if (!src) return null;
-  const trimmed = src.trim();
-  // Must START with STOP (word boundary) to count
-  const m = trimmed.match(/^STOP\b\s*(.*)$/i);
+  // Operate on the first non-empty line only. The previous regex used `.*$`
+  // which fails as soon as the input contains a newline (subject + body or a
+  // body with a signature like "-- Ciao") because JS `.` doesn't match `\n`
+  // and `$` is end-of-string, not end-of-line. First-line-only sidesteps that
+  // class of bug entirely.
+  const firstLine = (src.split(/\r?\n/).find(l => l.trim()) || '').trim();
+  if (!firstLine) return null;
+  const m = firstLine.match(/^STOP\b\s*(.*)$/i);
   if (!m) return null;
   const rest = (m[1] || '').trim();
   if (!rest) return { scope: 'this', target: null };

@@ -269,15 +269,6 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
 
   const parsed = parse(email);
 
-  // TEMP DEBUG: trace inbound emails routed to stop@ that fail to parse, so
-  // we can see whether the client populated subject/body or not. Remove once
-  // the mailto-stop UX is verified across clients (Thunderbird, Outlook web,
-  // Apple Mail).
-  if (parsed.kind === 'error' && parsed.code === 'stop_unrecognized') {
-    const trimmedBody = (email.body || '').replace(/\s+/g, ' ').slice(0, 200);
-    console.log(`[debug stop_unrecognized] from=${email.from} to=${email.to} subject=${JSON.stringify(email.subject || '')} bodyHead=${JSON.stringify(trimmedBody)}`);
-  }
-
   switch (parsed.kind) {
     case 'track':
       return handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now });
