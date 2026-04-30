@@ -269,13 +269,6 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
 
   const parsed = parse(email);
 
-  // TEMP: one-line trace of every inbound email so we can debug user-reported
-  // failures without re-deploying for each scenario. Body is truncated to 80
-  // chars to keep journal lines readable. Remove once stop UX + reply parsing
-  // are confirmed stable across clients.
-  const _bodyHead = (email.body || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-  console.log(`[inbound] from=${email.from} to=${email.to} subject=${JSON.stringify((email.subject || '').slice(0, 80))} body=${JSON.stringify(_bodyHead)} kind=${parsed.kind}${parsed.code ? ' code=' + parsed.code : ''}${parsed.scope ? ' scope=' + parsed.scope : ''}${parsed.target ? ' target=' + parsed.target : ''}`);
-
   switch (parsed.kind) {
     case 'track':
       return handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now });
