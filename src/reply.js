@@ -279,7 +279,7 @@ export function stopReply({ scope, target, count, trains, sender, incomingMsgid,
       fromLocal: 'stop',
       subject: `Stopped all tracking`,
       to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
-      body: `Cleared ${count} active trains. No more updates until you start fresh.`,
+      body: `Cleared ${count} active train${count === 1 ? '' : 's'}. No more updates until you start fresh.`,
     });
   }
   if (scope === 'trip') {
