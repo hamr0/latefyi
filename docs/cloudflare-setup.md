@@ -458,23 +458,159 @@ Confirmation reply within seconds.
 
 ---
 
-## Outbound deliverability (post-deploy hardening)
+## Step 17 — Outbound deliverability (SPF / DKIM / DMARC)
 
-The CF Email Routing wizard only configures inbound. For replies sent FROM the VPS, you'll want:
+CF Email Routing only configures inbound. For replies sent FROM the VPS, all three records below must pass — without them Gmail/Outlook will silently junk replies.
 
-1. **SPF** — append the VPS IP to the existing SPF record:
+### 17a. SPF
+
+Edit the existing SPF TXT record on the apex; **append `ip4:<VPS IP>`** before the `include:`:
+
+```
+v=spf1 ip4:155.94.144.191 include:_spf.mx.cloudflare.net ~all
+```
+
+Verify:
+```sh
+dig +short TXT late.fyi @1.1.1.1 | grep spf1
+```
+
+### 17b. DKIM (opendkim)
+
+`opendkim` runs on the deployment VPS already (for the co-tenant `addypin.com`). Add a key + signing-table entry for `late.fyi`. SSH to the VPS as root.
+
+```sh
+# 1. Generate key (selector = `latefyi2026`, year-versioned)
+mkdir -p /etc/opendkim/keys/late.fyi
+cd /etc/opendkim/keys/late.fyi
+opendkim-genkey -b 2048 -d late.fyi -s latefyi2026
+chown opendkim:opendkim latefyi2026.private latefyi2026.txt
+chmod 600 latefyi2026.private
+chmod 750 /etc/opendkim/keys/late.fyi
+
+# 2. Wire it into opendkim's tables
+echo "latefyi2026._domainkey.late.fyi late.fyi:latefyi2026:/etc/opendkim/keys/late.fyi/latefyi2026.private" >> /etc/opendkim/KeyTable
+echo "*@late.fyi latefyi2026._domainkey.late.fyi" >> /etc/opendkim/SigningTable
+echo "late.fyi" >> /etc/opendkim/TrustedHosts
+
+# 3. Show the public key for the DNS TXT record
+cat /etc/opendkim/keys/late.fyi/latefyi2026.txt
+```
+
+The `.txt` file contains a multi-line `( "v=DKIM1; k=rsa; " "p=..." "..." )` — concatenate the quoted segments into a **single line** when pasting into Cloudflare DNS:
+
+| Type | Name | Content |
+|---|---|---|
+| TXT | `latefyi2026._domainkey` | `v=DKIM1; k=rsa; p=<one long base64 string, no line breaks>` |
+
+⚠️ **Cloudflare's DNS UI sometimes preserves newlines from your paste**, which appear as `\010` bytes in `dig` output. Always paste single-line, or fix via API. Newlines in TXT will silently break DKIM verification at the receiver.
+
+After saving the DNS record, validate against the live key:
+
+```sh
+opendkim-testkey -d late.fyi -s latefyi2026 -k /etc/opendkim/keys/late.fyi/latefyi2026.private -vvv
+# expect: "key OK" (the "key not secure" warning is DNSSEC; harmless)
+
+systemctl restart opendkim
+```
+
+Postfix should already have:
+```
+smtpd_milters = unix:/run/opendkim/opendkim.sock
+non_smtpd_milters = unix:/run/opendkim/opendkim.sock
+```
+(Set up for the co-tenant; both domains share the same milter.)
+
+### 17c. DMARC
+
+Add a TXT record for monitoring (`p=none`). Tighten to `quarantine` then `reject` after 1–2 weeks of clean reports.
+
+| Type | Name | Content |
+|---|---|---|
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:postmaster@late.fyi; fo=1; adkim=r; aspf=r` |
+
+The `rua` mailbox gets aggregate XML reports from receivers. Email Routing needs a custom rule for it (or catch-all) — see step 19.
+
+### 17d. PTR / reverse DNS
+
+Set via VPS provider portal. RackNerd's default `155.94.144.191.<provider>` is fine for shared use; not strictly required if SPF/DKIM/DMARC pass.
+
+### 17e. Verify end-to-end
+
+```sh
+ssh root@<VPS> sendmail -f noreply@late.fyi -t <<EOF
+From: noreply@late.fyi
+To: <your-gmail>
+Subject: late.fyi DKIM/SPF/DMARC verification
+
+This is a deliverability test.
+EOF
+```
+
+In Gmail open the message → ⋮ → **Show original**. Top of headers should show:
+
+```
+SPF:    PASS with IP <VPS IP>
+DKIM:   'PASS' with domain late.fyi
+DMARC:  'PASS'
+```
+
+All three must say PASS before opening the allowlist.
+
+---
+
+## Step 18 — Apex landing page via Cloudflare Pages
+
+The apex `late.fyi` serves a static one-pager from `web/index.html`.
+
+1. Cloudflare → **Workers & Pages** → **Create application** → **Pages** → **Connect to Git** → repo `hamr0/latefyi`
+2. Build settings:
+
+| Field | Value |
+|---|---|
+| Project name | `latefyi` |
+| Production branch | `main` |
+| Framework preset | None |
+| Build command | *(empty)* |
+| Build output directory | `web` |
+| Root directory | *(empty)* |
+
+3. Save and Deploy. The `<project>.pages.dev` URL serves immediately.
+4. **Custom domains** → **Set up a custom domain** → `late.fyi`. CF auto-creates a CNAME-flattened apex record (DNS already on the same zone).
+
+⚠️ If apex DNS doesn't resolve after the custom-domain step, manually add a CNAME at `@` pointing to `<project>.<account>.workers.dev`, **proxied** (orange cloud). The "auto-add" step occasionally skips when other DNS rows for the apex already exist.
+
+5. Verify:
+   ```sh
+   dig +short late.fyi @1.1.1.1   # should return CF anycast (188.114.x.x)
+   curl -sI https://late.fyi | head -1   # HTTP/2 200
    ```
-   v=spf1 ip4:<VPS IP> include:_spf.mx.cloudflare.net ~all
-   ```
-   Edit in CF dashboard → DNS → SPF TXT record on the apex.
 
-2. **DKIM signing** — install `opendkim` and configure it for `noreply@late.fyi`. Generate a key, publish the public part as a DNS TXT record, configure Postfix to call opendkim. (`opendkim` is already on the deployment VPS for addypin; just needs a signing-table entry for `late.fyi`.)
+Subsequent pushes to `main` auto-deploy the page. Branch pushes get preview URLs (`<branch>.latefyi.pages.dev`).
 
-3. **PTR** — your VPS provider sets reverse DNS for the IP. Have it point at something matching the sending domain (or at least not a generic `xxx.contabo` / `xxx.racknerd`).
+⚠️ **Two Workers, often confused:**
+- `latefyi-ingest` — Email Worker (this guide steps 13–15). No HTTP route.
+- `latefyi` — Pages-style Worker (this step). Has custom domain `late.fyi`.
 
-4. **Test** — send to your own Gmail and check the headers for `dkim=pass` and `spf=pass`.
+Don't add the email handler to the Pages Worker, and don't add an HTTP route to the email Worker. They show up in the same dashboard.
 
-Without these, Microsoft / Gmail / iCloud may junk the replies. Phase 7 hardening item.
+---
+
+## Step 19 — Email Routing for non-tracking addresses
+
+Some local-parts shouldn't reach the tracking pipeline. The Worker has a defensive `NON_TRACKING_LOCALPARTS` list (`feedback`, `postmaster`, `abuse`, `admin`, `noreply`, etc.) that drops mail to those addresses before any allowlist or ingest forward. **CF Email Routing custom rules are the primary delivery mechanism**; the Worker's drop is defense-in-depth for misconfigured or missing rules.
+
+To deliver `feedback@late.fyi` to a real inbox:
+
+1. **Email** → **Email Routing** → **Destination addresses** → **Add destination address** → enter your inbox (e.g., `you@gmail.com`). Click the verification link CF sends.
+2. **Routing rules** → **Create rule**:
+   - **Match** — Custom address: `feedback@late.fyi`
+   - **Action** — Send to email: `you@gmail.com`
+   - **Save** + **Enable**
+
+CF evaluates custom rules **before** the catch-all, so `feedback@` goes to your inbox; everything else hits the catch-all → Worker.
+
+Add similar rules for `postmaster@`, `abuse@`, `admin@` if you want incident reports / DMARC aggregate reports / abuse complaints to land somewhere usable.
 
 ---
 
@@ -485,10 +621,15 @@ Without these, Microsoft / Gmail / iCloud may junk the replies. Phase 7 hardenin
 | Email rejected `5.1.1 address not found` | Catch-all rule is Drop, no rule matches | Step 15 — switch catch-all to Worker |
 | Worker upload returns 10000 Authentication error | Token missing Account → Workers Scripts: Edit | Add it (token edit), retry |
 | `/health` returns 502 | ingest service crashed | `journalctl -u latefyi-ingest -n 50` |
-| Confirmation never arrives but `sent: true` | Receiver junked it (no DKIM/SPF) | See deliverability section above |
+| Confirmation never arrives but `sent: true` | Receiver junked it (no DKIM/SPF) | See step 17 (deliverability) |
+| Gmail "Show original" shows `dkim=none` | Worker signed with addypin's selector, not late.fyi's | Verify `/etc/opendkim/SigningTable` has `*@late.fyi …`, restart `opendkim` |
+| `dig` shows DKIM TXT with `\010` bytes | CF DNS UI preserved newlines from paste | Re-edit, paste single-line (use `cat /tmp/file.txt` and copy from there) |
 | `wrangler` complains about /memberships 9106 | Token lacks User Details: Read | Use template "Edit Cloudflare Workers" or bypass wrangler (steps 13–15 use raw API) |
 | Pending file written but never polled | poller service down OR cron not running | `systemctl status latefyi-poller`, `sudo -u latefyi crontab -l` |
 | ACME challenge fails | DNS not propagated yet, or proxy ON in CF (must be DNS only / gray cloud) | Wait, recheck `dig ingest.late.fyi`, ensure A record proxy is gray |
+| `late.fyi` apex doesn't resolve | Pages "auto add CNAME" skipped on the existing zone | DNS → Add CNAME `@` → `<project>.<account>.workers.dev`, **proxied** |
+| `feedback@late.fyi` got a "not a valid train number" reply | CF Email Routing custom rule missing/disabled; catch-all caught it | Step 19 — add the custom rule (Worker drops `feedback@` defensively, but the rule is what delivers it) |
+| Local resolver shows NXDOMAIN, `@1.1.1.1` works | Negative-cache TTL on systemd-resolved | `sudo resolvectl flush-caches`, retry |
 
 ---
 
