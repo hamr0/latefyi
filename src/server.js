@@ -98,7 +98,7 @@ async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackCli
 
   if (r.kind === 'error') {
     if (r.code === 'train_not_found') {
-      return trainNotFoundReply({ trainNum: parsed.trainNum, sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid() });
+      return trainNotFoundReply({ trainNum: parsed.trainNum, sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid(), onDate: parsed.onDate });
     }
     if (r.code === 'station_no_match' || r.code === 'station_not_on_route') {
       return stationNotOnRouteReply({

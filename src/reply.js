@@ -108,20 +108,25 @@ export function missingContextReply({ trainNum, sender, incomingMsgid, ourMsgid 
 
 // ---- §7: train not found ----
 
-export function trainNotFoundReply({ trainNum, sender, incomingMsgid, ourMsgid }) {
+export function trainNotFoundReply({ trainNum, sender, incomingMsgid, ourMsgid, onDate }) {
+  const window = onDate ? `on ${onDate}` : 'today or tomorrow';
   return reply({
     subject: `Can't find train ${trainNum}`,
     to: sender,
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
+    replyTo: trainNum ? `${trainNum}@${DOMAIN}` : undefined,
     body:
-      `No train matching "${trainNum}" found today or tomorrow.\n\n` +
+      `No train matching "${trainNum}" found ${window}.\n\n` +
       `Common confusions:\n` +
       `- TGV INOUI: 4 digits (e.g. 9876)\n` +
       `- TER/RE: 4-5 digits, often prefixed RE/TER\n` +
       `- Eurostar: prefixed EUR + 4 digits\n` +
       `- ICE: prefixed ICE + 3-4 digits\n` +
-      `- Numbers reset daily — yesterday's ${trainNum} may not exist today\n\n` +
+      `- Numbers reset daily — train numbers can also vary by day-of-week\n\n` +
+      (onDate
+        ? `Tip: if the date is more than a few weeks out, HAFAS may not have published that day's schedule yet — try again closer to the date.\n\n`
+        : '') +
       `Check your booking confirmation and resend.`,
   });
 }
