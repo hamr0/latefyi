@@ -25,15 +25,10 @@ test('every reply ends with FOOTER', () => {
   assert.ok(r.body.endsWith(FOOTER));
 });
 
-test('FOOTER mentions late.fyi format and STOP variants', () => {
+test('FOOTER identifies the service and surfaces feedback + privacy claim', () => {
   assert.match(FOOTER, /late\.fyi/);
-  assert.match(FOOTER, /STOP/);
-  assert.match(FOOTER, /Trip:/);
-});
-
-test('FOOTER documents new On: and feedback@ surfaces', () => {
-  assert.match(FOOTER, /On:/);
   assert.match(FOOTER, /feedback@late\.fyi/);
+  assert.match(FOOTER, /don't store/i);
 });
 
 // ===== from / to / threading =====

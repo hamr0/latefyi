@@ -9,11 +9,7 @@ const DOMAIN = 'late.fyi';
 const FROM_ADDRESS = `noreply@${DOMAIN}`;
 
 export const FOOTER = `— late.fyi
-─────
-<TRAINNUM>@${DOMAIN}   Subject: From: <station>, To: <station>   (or just To: for pickup)
-Optional: On: 2026-05-04 (or "5 May 2026")   ·   Trip: <name>
-Reply: STOP / STOP TRIP <name> / STOP ALL
-Feedback: feedback@${DOMAIN}`;
+feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
 
 // ---- helpers ----
 

@@ -10,8 +10,31 @@
 //   LATEFYI_INGEST_URL        e.g. https://ingest.late.fyi/ingest
 //   LATEFYI_INGEST_TOKEN      32+ char random hex; matches server's INGEST_TOKEN
 
+// Local-parts that should never reach the tracking-ingest pipeline.
+// CF Email Routing custom rules handle delivery (forward to a real inbox),
+// but if a rule is misconfigured or ordered after the catch-all, the
+// Worker is the last line of defense — we drop silently so we don't bounce
+// "not a valid train number" replies for mail that was never train-related.
+const NON_TRACKING_LOCALPARTS = new Set([
+  'feedback', 'postmaster', 'abuse', 'admin', 'hostmaster', 'webmaster',
+  'security', 'noreply', 'no-reply', 'mailer-daemon',
+]);
+
+function localPartOf(addr) {
+  if (!addr) return '';
+  const at = addr.indexOf('@');
+  return (at >= 0 ? addr.slice(0, at) : addr).toLowerCase();
+}
+
 export default {
   async email(message, env, ctx) {
+    // Bail before anything else if this is going to a reserved address.
+    // No allowlist check, no ingest forward — just drop and let CF routing
+    // rules (or the implicit "no rule = reject" behavior) handle delivery.
+    if (NON_TRACKING_LOCALPARTS.has(localPartOf(message.to))) {
+      return;
+    }
+
     const allowed = (env.ALLOWED_SENDERS || '')
       .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const sender = (message.from || '').toLowerCase();
