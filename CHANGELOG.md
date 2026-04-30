@@ -10,6 +10,11 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Subject inbox-grouping signals (`[trip]` + ISO date)
+- Subject lines now carry conditional inbox-grouping signals: `Tracking ICE 1255 [austria] — Amsterdam Centraal → Stuttgart Hbf — 2026-05-06`. Trip tag in brackets between train and route (only when set); ISO date suffix after the route (only when train date is *not* today/tomorrow — receipt date covers near-term trains in the inbox column). Same convention threads through `pushReply` so update emails stay grouped consistently.
+- Helper `subjectTags({ trip, scheduledIso })` returns `{ prefix, suffix }` (production passes a real clock, tests inject one). Plumbed `trip` + `scheduledIso` from `poll-runner` → `push.dispatch` → `pushReply`.
+- 3 new tests covering trip-only, date-only, and combined formats; 249/249 pass.
+
 ### Routable From: address + display name (PRD 1.10.0 / impl 0.10.0)
 - Outbound replies now use `latefyi <<routable-local>@late.fyi>` instead of `noreply@late.fyi`. The local-part is meaningful per template — confirmations and per-train updates use `<TRAINNUM>@`, stop confirmations use `stop@`, config replies use `config@`, error/help replies use `help@`. Display name `latefyi` keeps the inbox sender clean.
 - **Real bug behind "reply STOP doesn't work":** Gmail and others use the `From:` address (not `Reply-To:`) when you hit Reply on a confirmation. Replies were going to `noreply@late.fyi`, which the Cloudflare worker drops via `NON_TRACKING_LOCALPARTS` (defense against worker→worker loops) — silent disappearance, no log on our side. The new From: locals are all routable through the worker, so Reply now lands at the parser. `Reply-To:` retained as belt-and-suspenders for clients that honor it.

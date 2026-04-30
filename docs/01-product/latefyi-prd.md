@@ -289,7 +289,7 @@ Stops are triggered by a fresh email to `stop@late.fyi` (or any `<TRAINNUM>@late
 
 ```
 From: latefyi <RE19750@late.fyi>
-Subject: Tracking RE19750 — Amiens → Lille Flanders
+Subject: Tracking RE19750 [paris-weekend] — Amiens → Lille Flanders — 2026-05-06
 
 Tracking RE19750 (TER, SNCF), Amiens → Lille Flanders.
 Scheduled: dep 14:02 Amiens, arr 14:38 Lille Flanders.
@@ -312,6 +312,11 @@ Stop tracking this train:
 The display name `latefyi` keeps the inbox sender clean. Critical: `noreply@` is **not used** as From: — clients that ignore Reply-To (Gmail, others) reply to From: directly, and the Cloudflare worker drops `noreply@` via `NON_TRACKING_LOCALPARTS`. Routable From: locals make Reply-STOP work as a silent fallback on top of the canonical mailto path.
 
 **Platform + Status fields use `TBC`** when not yet known (always at confirmation time for trips ≥1 day out). Operators don't assign platforms until ~30 min before departure; HAFAS doesn't surface real-time delay/status until the train is in service. Showing the fields with `TBC` placeholders in the confirmation sets the expectation of what will be filled later, rather than implying these are missing concepts.
+
+**Subject inbox-grouping signals** are conditional, never always-on:
+- `[trip]` prefix — between train and route — is rendered iff a `Trip:` tag was set on the request. Brackets follow the mailing-list convention so users parse them as tags at a glance.
+- ` — YYYY-MM-DD` suffix — at the end of the subject — is rendered iff the train date is *not* today or tomorrow. Near-term trains skip the suffix because the receipt date already shows next to the subject column in most clients; for advance-planned trips, the date is the disambiguating signal in inbox view. ISO format is unambiguous across locales and threads with the rest of our text-and-headers norm.
+- The same convention applies to per-event `pushReply` subjects (`ICE1255 +5min [austria] — 2026-05-06`) so inbox grouping stays consistent across confirmation and updates.
 
 ### Confirmation (user opted in to ntfy)
 
