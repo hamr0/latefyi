@@ -53,7 +53,7 @@ The user emails `<TRAINNUM>@late.fyi`, optionally with `From:` / `To:` headers t
 
 1. User books an SNCF ticket: RE19750, Amiens → Lille Flanders, departing 14:02
 2. User emails `RE19750@late.fyi` with `From: Amiens, To: Lille Flanders` from their allowlisted email address
-3. System replies within seconds: "Tracking RE19750, Amiens → Lille Flanders, scheduled 14:02. Updates will arrive by email starting T-30 at 13:32. Reply STOP to cancel."
+3. System replies within seconds: "Tracking RE19750, Amiens → Lille Flanders, scheduled 14:02. Updates will arrive by email starting T-30 at 13:32." A one-click `mailto:stop@late.fyi?subject=STOP%20RE19750` link is included so cancelling is a tap, not a typed reply.
 4. At 13:32, polling begins. Email update: "RE19750 — no platform yet, on time"
 5. At 13:48, platform announced. Email update (subject: "RE19750 → Platform 7"): "Platform 7 at Amiens. On time."
 6. At 13:55, delay detected. Email update: "RE19750 delayed +6min. New departure 14:08, Platform 7."
@@ -269,19 +269,21 @@ Every outbound email — confirmations, errors, updates, disambiguation prompts,
 — late.fyi
 ─────
 Format: <TRAINNUM>@late.fyi   Subject: From: <station>, To: <station>   (or just To: for pickup)
-Optional: Trip: <name>   ·   Reply STOP / STOP TRIP <name> / STOP ALL   ·   Headers case-insensitive
+Optional: Trip: <name>   ·   Stop via mailto: links in each email (or Subject: STOP / STOP TRIP <name> / STOP ALL to stop@late.fyi)   ·   Headers case-insensitive
 ```
 
 For the rest of this section, `[FOOTER]` in templates is shorthand for this block. Implementation: append from a single string constant in `reply.js` so it's edited in one place.
 
 ### STOP variants (canonical)
 
-| Reply | Effect |
+Stops are triggered by a fresh email to `stop@late.fyi` (or any `<TRAINNUM>@late.fyi` address) with `STOP …` in the subject. The canonical UX is the **one-click `mailto:` link** embedded in every confirmation and update email — it opens a fresh compose with the right subject already filled, no typing required. Replying STOP to a confirmation is intentionally **not** parsed: client-specific attribution lines and quoted-content boundaries make it unreliable across mail clients.
+
+| Email | Effect |
 |---|---|
-| `STOP` | Stops the tracking the reply is threaded to (via `In-Reply-To`). If the reply is unthreaded, replies asking "Which train? Send `STOP <TRAINNUM>` or `STOP ALL`." |
-| `STOP <TRAINNUM>` | Stops that specific train's tracking, regardless of threading. |
-| `STOP TRIP <name>` | Stops every active tracking whose `trip` field matches `<name>` (case-insensitive). One reply summarizes how many were cleared. |
-| `STOP ALL` | Stops every active tracking for the sender. |
+| `Subject: STOP <TRAINNUM>` to `stop@late.fyi` (or `<TRAINNUM>@late.fyi`) | Stops that specific train's tracking. The mailto link in confirmation/push emails uses this form. |
+| `Subject: STOP TRIP <name>` to `stop@late.fyi` | Stops every active tracking whose `trip` field matches `<name>` (case-insensitive). One reply summarizes how many were cleared. |
+| `Subject: STOP ALL` to `stop@late.fyi` | Stops every active tracking for the sender. |
+| `Subject: STOP` to `<TRAINNUM>@late.fyi` | Bare STOP at a train-number address resolves to that train. |
 
 ### Confirmation (happy path, default email channel)
 
