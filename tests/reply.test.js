@@ -31,6 +31,11 @@ test('FOOTER mentions late.fyi format and STOP variants', () => {
   assert.match(FOOTER, /Trip:/);
 });
 
+test('FOOTER documents new On: and feedback@ surfaces', () => {
+  assert.match(FOOTER, /On:/);
+  assert.match(FOOTER, /feedback@late\.fyi/);
+});
+
 // ===== from / to / threading =====
 
 test('reply.from is noreply@late.fyi', () => {
