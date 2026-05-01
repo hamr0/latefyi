@@ -10,6 +10,8 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.11.0 / PRD 1.11.0 — Subject inbox-grouping + landing-page polish (2026-05-01)
+
 ### Subject inbox-grouping signals (`[trip]` + ISO date)
 - Subject lines now carry conditional inbox-grouping signals: `Tracking ICE 1255 [austria] — Amsterdam Centraal → Stuttgart Hbf — 2026-05-06`. Trip tag in brackets between train and route (only when set); ISO date suffix after the route (only when train date is *not* today/tomorrow — receipt date covers near-term trains in the inbox column). Same convention threads through `pushReply` so update emails stay grouped consistently.
 - Helper `subjectTags({ trip, scheduledIso })` returns `{ prefix, suffix }` (production passes a real clock, tests inject one). Plumbed `trip` + `scheduledIso` from `poll-runner` → `push.dispatch` → `pushReply`.

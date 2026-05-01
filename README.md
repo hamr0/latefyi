@@ -41,4 +41,4 @@ Click the `mailto:` link in any email. One tap and your mail client opens a fres
 
 ---
 
-Feedback: feedback@late.fyi · [Apache 2.0](LICENSE)
+feedback@late.fyi · [Apache 2.0](LICENSE)
