@@ -10,6 +10,20 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.12.0 / PRD 1.12.0 — Bug fixes from code review (2026-05-01)
+
+### Fixed
+
+- **C-1 (critical): push notifications never delivered in production.** `run()` in `poll-runner.js` accepted `transport` and `getUserChannel` at the CLI call site but its own signature didn't declare them, so they were silently dropped before being forwarded to `tick()`. The `if (transport && getUserChannel …)` dispatch block inside `tick()` therefore never fired. One-line fix to the `run()` signature; regression test added.
+- **I-1: `CHANNELS email` config reply had wrong `From:` and no FOOTER.** The confirmation was sent from bare `noreply@late.fyi` (no display name) and omitted the standard footer. Now uses `latefyi <config@late.fyi>` and appends FOOTER, matching every other reply template. Test assertion added.
+- **I-2: bare `STOP` to `stop@late.fyi` produced "Stopped tracking null".** `parse.js` correctly returns `{scope:'this', target:null}` for a bare STOP (local-part carries no train number). `handleStop` now detects this case and treats it as STOP ALL rather than matching `r.request?.trainNum === null` (always false) and then calling `stopReply` with `target:null`. Test added.
+- **I-3: `stats.sh` piped plaintext `.sender` through a shell pipeline to count active users.** The intermediate `xargs jq -r '.sender'` step extracted and deduplicated raw email addresses in-process. Replaced with `.senderHash` — already present on every active record — so no plaintext email is ever materialised outside the JSON file.
+- **I-5: HAFAS user-agent version mismatch.** `ingest-server.js` sent `latefyi/0.5.0`; `poll-runner.js` sent `latefyi/0.6.0`. Both now send `latefyi/0.11.0`.
+- **m-4: dead `done/` directory cleanup removed.** Terminal records are deleted in-place (`unlinkSync`), not moved to `done/`. The `find … done/ … -delete` pruning line in `wake.sh` and the `done` entry in `ensureStateDirs` (`schedule.js`) were dead code. Both removed.
+- **m-5: inconclusive test assertion tightened.** `assert.ok(len===1||len===0)` in the arrived-record test accepted either outcome; replaced with `assert.equal(len, 1)` with a comment explaining the two-tick eviction design.
+
+251/251 tests pass.
+
 ## 0.11.0 / PRD 1.11.0 — Subject inbox-grouping + landing-page polish (2026-05-01)
 
 ### Subject inbox-grouping signals (`[trip]` + ISO date)
