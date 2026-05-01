@@ -13,7 +13,7 @@ const DEFAULT_POLLING = {
 };
 
 function ensureStateDirs(stateDir) {
-  for (const sub of ['pending', 'active', 'done', 'errors', 'users']) {
+  for (const sub of ['pending', 'active', 'users']) {
     mkdirSync(join(stateDir, sub), { recursive: true });
   }
 }

@@ -8,8 +8,7 @@
 #
 # Responsibilities:
 #   1. Move pending/*.json whose poll_start_time has arrived → active/
-#   2. Prune done/*.json older than LOG_RETENTION_DAYS
-#   3. Ensure the poll-runner daemon is alive (start if not)
+#   2. Ensure the poll-runner daemon is alive (start if not)
 #
 # Dependencies: bash, jq, date(GNU coreutils), find, pgrep.
 
@@ -18,10 +17,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE_DIR="${STATE_DIR:-$ROOT/state}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs}"
-RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
 POLL_RUNNER="${POLL_RUNNER:-$ROOT/src/poll-runner.js}"
 
-mkdir -p "$STATE_DIR/pending" "$STATE_DIR/active" "$STATE_DIR/done" "$STATE_DIR/errors" "$LOG_DIR"
+mkdir -p "$STATE_DIR/pending" "$STATE_DIR/active" "$LOG_DIR"
 
 NOW_TS=$(date -u +%s)
 ACTIVATED=0
@@ -48,10 +46,7 @@ for f in "$STATE_DIR"/pending/*.json; do
   fi
 done
 
-# 2. Prune old done/ files.
-find "$STATE_DIR/done" -name "*.json" -mtime "+$RETENTION_DAYS" -delete 2>/dev/null || true
-
-# 3. Ensure poll-runner is running (only if it exists; Phase 3 introduces it).
+# 2. Ensure poll-runner is running (only if it exists; Phase 3 introduces it).
 if [ -f "$POLL_RUNNER" ]; then
   if ! pgrep -f "node $POLL_RUNNER" >/dev/null 2>&1; then
     nohup node "$POLL_RUNNER" >> "$LOG_DIR/poller.log" 2>&1 &

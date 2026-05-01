@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tick } from '../src/poll-runner.js';
+import { tick, run } from '../src/poll-runner.js';
 
 // Same trip data as poll.test.js
 const ICE145_TRIP = {
@@ -81,9 +81,12 @@ test('tick: respects pollIntervalMs (skips file polled <30s ago in pre_anchor)',
   assert.equal(summary.skipped, 1);
 });
 
-// ===== terminal: arrived → moved to done/ =====
+// ===== terminal: arrived → deleted =====
 
-test('tick: arrived record moves active → done after linger expires', async () => {
+test('tick: arrived record stays in active until a full poll tick fires and confirms arrival', async () => {
+  // shouldPollNow returns false for a record already in ACTIVE phase with a
+  // terminal snapshot — the file stays put until the next poll fires and
+  // isTerminal() evicts it. The following test proves the full eviction path.
   const arrivedSnap = {
     pollTimestamp: '2026-04-29T14:02:00Z',
     hasDeparted: true, hasArrived: true,
@@ -94,23 +97,11 @@ test('tick: arrived record moves active → done after linger expires', async ()
   });
   const { stateDir, logDir } = setup([rec]);
 
-  // 6 min after predicted arrival — past 5-min linger window
+  // 6 min after predicted arrival — linger expired, but shouldPollNow skips it
   await tick({ stateDir, logDir, getClient: () => fakeClient(), now: new Date('2026-04-29T14:08:00Z').getTime() });
 
-  // active dir should be empty (terminal already + skipped polling)... actually:
-  // Wait — our shouldPollNow returns false for terminal. So tick won't even
-  // call poll(). But isTerminal check happens *after* poll, on the updated
-  // record. With no poll, the file stays in active/.
-  //
-  // To make this test meaningful, the runner should also evict files that are
-  // already terminal even without polling. Let's see what we get and decide.
-  // (If active still has the file, we'll need to add an eviction sweep.)
-  const stillActive = readdirSync(join(stateDir, 'active'));
-  // Document current behavior; if 1 file remains in active, the runner is
-  // leaving terminal records sitting there. That's fine if wake.sh prunes by
-  // schedule.poll_end_time, but it's nicer to evict here.
-  // For now, assert what happens and let the next test prove the cleanup.
-  assert.ok(stillActive.length === 1 || stillActive.length === 0);
+  // Record stays in active until the next poll fires and evicts it (see next test).
+  assert.equal(readdirSync(join(stateDir, 'active')).length, 1);
 });
 
 test('tick: when shouldPollNow allows it and isTerminal, file is moved on the same tick', async () => {
@@ -229,7 +220,36 @@ test('tick: processes multiple records independently', async () => {
 test('tick: empty active dir → no-op, no error', async () => {
   const stateDir = mkdtempSync(join(tmpdir(), 'latefyi-runner-'));
   const logDir   = mkdtempSync(join(tmpdir(), 'latefyi-runner-log-'));
-  for (const sub of ['active', 'done', 'errors']) mkdirSync(join(stateDir, sub), { recursive: true });
+  mkdirSync(join(stateDir, 'active'), { recursive: true });
   const summary = await tick({ stateDir, logDir, getClient: () => fakeClient(), now: Date.now() });
   assert.deepEqual(summary, { polled: 0, skipped: 0, events: 0, terminal: 0, errors: 0 });
+});
+
+// ===== run() forwards transport to tick() =====
+
+test('run: transport is forwarded to tick() and sendEmail is called when events occur', async () => {
+  const { stateDir, logDir } = setup([recordFor('m1')]);
+  const sent = [];
+  const transport = {
+    sendEmail: async (msg) => { sent.push(msg); },
+    sendNtfy: async () => {},
+  };
+  const getUserChannel = () => 'email';
+
+  const ac = new AbortController();
+  const runPromise = run({
+    stateDir, logDir,
+    getClient: () => fakeClient(),
+    intervalMs: 0,
+    signal: ac.signal,
+    transport,
+    getUserChannel,
+    now: new Date('2026-04-29T07:30:00Z').getTime(),
+  });
+  // Allow one tick to fire, then abort.
+  await new Promise(r => setTimeout(r, 20));
+  ac.abort();
+  await runPromise.catch(() => {});
+
+  assert.ok(sent.length > 0, 'run() should have called transport.sendEmail via tick()');
 });

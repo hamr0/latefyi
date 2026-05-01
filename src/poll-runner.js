@@ -157,10 +157,10 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
 }
 
 // Long-running entry point. Calls tick() at intervalMs cadence.
-export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal }) {
+export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null }) {
   while (!signal?.aborted) {
     try {
-      const s = await tick({ stateDir, logDir, getClient });
+      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel });
       if (s.polled || s.events || s.terminal || s.errors) {
         console.log(`[poll-runner] ${new Date().toISOString()} polled=${s.polled} events=${s.events} terminal=${s.terminal} errors=${s.errors} skipped=${s.skipped}`);
       }
@@ -185,7 +185,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const name of ['oebb', 'pkp']) {
     try {
       const mod = await import(`hafas-client/p/${name}/index.js`);
-      profiles[name] = createClient(mod.profile || mod.default, 'latefyi/0.6.0');
+      profiles[name] = createClient(mod.profile || mod.default, 'latefyi/0.11.0');
     } catch (e) {
       console.error(`failed to load profile ${name}: ${e.message}`);
     }

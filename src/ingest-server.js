@@ -128,7 +128,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   for (const name of ['oebb', 'pkp']) {
     try {
       const mod = await import(`hafas-client/p/${name}/index.js`);
-      profiles[name] = createClient(mod.profile || mod.default, 'latefyi/0.5.0');
+      profiles[name] = createClient(mod.profile || mod.default, 'latefyi/0.11.0');
     } catch (e) {
       console.error(`failed to load profile ${name}:`, e.message);
     }

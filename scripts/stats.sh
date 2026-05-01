@@ -47,8 +47,9 @@ fi
 
 # Active right now — currently tracked.
 ACTIVE_TRIPS=$(find "$STATE/active" -maxdepth 1 -name '*.json' -type f 2>/dev/null | wc -l)
+# Count distinct active users by senderHash (never touch plaintext sender).
 ACTIVE_USERS=$(find "$STATE/active" -maxdepth 1 -name '*.json' -type f -print0 2>/dev/null \
-  | xargs -0 -r jq -r '.sender // empty' 2>/dev/null \
+  | xargs -0 -r jq -r '.senderHash // empty' 2>/dev/null \
   | sort -u | wc -l)
 
 # Events fired ever — push.jsonl is append-only audit (senderHash, never plaintext).

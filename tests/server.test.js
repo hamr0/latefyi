@@ -183,6 +183,8 @@ test('config: CHANNELS email → simple confirmation', async () => {
   });
   assert.match(r.subject, /Channel updated to email/);
   assert.doesNotMatch(r.body, /ntfy/i);
+  assert.match(r.from, /config@late\.fyi/);
+  assert.match(r.body, /late\.fyi/); // FOOTER present
 });
 
 // ===== STOP variants =====
@@ -401,6 +403,24 @@ test('disambig: out-of-range digit re-sends the numbered list (state preserved)'
   });
   assert.match(r2.body, /Brussels Midi/);
   assert.equal(readdirSync(join(stateDir, 'pending-disambig')).length, 1);
+});
+
+test('stop: bare STOP to stop@ with no train number treats as STOP ALL, not "Stopped tracking null"', async () => {
+  const { stateDir } = setup();
+  // Track one train so STOP ALL has something to clear.
+  await handleInbound({
+    email: baseEmail({ msgid: '<a@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+
+  const r = await handleInbound({
+    email: baseEmail({ to: 'stop@late.fyi', subject: 'STOP' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.doesNotMatch(r.subject, /null/);
+  assert.doesNotMatch(r.body, /null/);
+  // Treated as STOP ALL — clears the record.
+  assert.equal(readdirSync(join(stateDir, 'pending')).length, 0);
 });
 
 test('disambig: reply with unknown In-Reply-To is silently dropped', async () => {

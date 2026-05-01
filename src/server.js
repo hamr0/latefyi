@@ -23,7 +23,7 @@ import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
   unauthorizedSenderReply, stopReply, ntfyOptInReply, genericErrorReply,
-  rateLimitedReply, tooManyActiveReply,
+  rateLimitedReply, tooManyActiveReply, FOOTER,
 } from './reply.js';
 
 const DOMAIN = 'late.fyi';
@@ -192,6 +192,11 @@ async function handleDisambigReply({ email, parsed, stateDir, primaryClient, fal
 }
 
 function handleStop({ email, parsed, stateDir }) {
+  // scope='this' with no target means bare STOP to stop@ (no train number in
+  // local-part or body). Treat as STOP ALL rather than "Stopped tracking null".
+  if (parsed.scope === 'this' && !parsed.target) {
+    parsed = { ...parsed, scope: 'all' };
+  }
   let matches, count;
   if (parsed.scope === 'all') {
     matches = findRecordsForSender(stateDir, email.from, () => true);
@@ -237,10 +242,10 @@ function handleConfig({ email, parsed, stateDir }) {
     }
     setChannel(email.from, 'email', stateDir);
     return {
-      from: `noreply@${DOMAIN}`,
+      from: `latefyi <config@${DOMAIN}>`,
       to: email.from,
       subject: `Channel updated to email`,
-      body: `Your delivery channel is now: email.`,
+      body: `Your delivery channel is now: email.\n\n${FOOTER}`,
       headers: { 'In-Reply-To': email.msgid, 'Message-ID': newMsgid() },
     };
   }
