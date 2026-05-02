@@ -99,8 +99,7 @@ test('confirmation: subject contains route', () => {
   assert.match(r.subject, /Berlin Ostbahnhof/);
 });
 
-// Subject inbox-grouping signals: trip prefix in [brackets], date suffix
-// after the route when the train is more than 1 day out.
+// Subject inbox-grouping signals: trip prefix in [brackets], date suffix after the route.
 test('confirmation: subject includes [trip] prefix when trip set', () => {
   const r = confirmationReply({
     resolved: sampleResolved({ trip: 'austria' }),
@@ -109,9 +108,7 @@ test('confirmation: subject includes [trip] prefix when trip set', () => {
   assert.match(r.subject, /Tracking ICE 145 \[austria\] —/);
 });
 
-test('confirmation: subject includes — YYYY-MM-DD suffix for future dates', () => {
-  // sampleResolved uses 2026-04-29 — far enough from any plausible test runtime
-  // to guarantee "not today/tomorrow", so the suffix always renders.
+test('confirmation: subject includes — YYYY-MM-DD suffix', () => {
   const r = confirmationReply({
     resolved: sampleResolved(),
     sender: 'a@b',

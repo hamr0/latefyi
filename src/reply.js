@@ -28,6 +28,11 @@ function fmtTime(iso) {
   return d.toISOString().replace(/^.+T(\d{2}:\d{2}).+$/, '$1');
 }
 
+function fmtDatetime(iso) {
+  if (!iso) return '?';
+  return new Date(iso).toISOString().replace(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}).+$/, '$1 $2');
+}
+
 function fmtDate(iso) {
   if (!iso) return '?';
   return new Date(iso).toISOString().slice(0, 10);
@@ -38,21 +43,14 @@ function withFooter(body) {
 }
 
 // Inbox-grouping signals split into prefix (trip tag, before the route) and
-// suffix (ISO date, after the route, only when not today/tomorrow — the
-// receipt date already shows next to the subject for near-term trains).
+// suffix (ISO date, after the route, always present when known — subject lines
+// are frozen at send time so relative terms like "today" become wrong by
+// tomorrow).
 //   prefix: ` [trip]`
 //   suffix: ` — 2026-05-06`
-// `nowIso` lets tests inject a fixed clock; production passes nothing.
-function subjectTags({ trip, scheduledIso }, nowIso = new Date().toISOString()) {
+function subjectTags({ trip, scheduledIso }) {
   const prefix = trip ? ` [${trip}]` : '';
-  let suffix = '';
-  if (scheduledIso) {
-    const trainYmd = scheduledIso.slice(0, 10);
-    const today = new Date(nowIso);
-    const yToday = today.toISOString().slice(0, 10);
-    const yTomorrow = new Date(today.getTime() + 86_400_000).toISOString().slice(0, 10);
-    if (trainYmd !== yToday && trainYmd !== yTomorrow) suffix = ` — ${trainYmd}`;
-  }
+  const suffix = scheduledIso ? ` — ${scheduledIso.slice(0, 10)}` : '';
   return { prefix, suffix };
 }
 
@@ -134,7 +132,7 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
     replyTo: trainNum ? `${trainNum}@${DOMAIN}` : undefined,
     body:
       `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
-      `Scheduled: dep ${fmtTime(dep)} ${fromName}, arr ${fmtTime(arr)} ${toName}.\n` +
+      `Scheduled: dep ${fmtDatetime(dep)} ${fromName}, arr ${fmtDatetime(arr)} ${toName}.\n` +
       `Departure platform: ${depPlat}    Arrival platform: ${arrPlat}\n` +
       `Status: ${status}\n` +
       `${updatesLine}\n\n${stopBlock}`,
