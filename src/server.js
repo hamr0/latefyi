@@ -23,7 +23,7 @@ import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
   unauthorizedSenderReply, stopReply, ntfyOptInReply, genericErrorReply,
-  rateLimitedReply, tooManyActiveReply, FOOTER,
+  rateLimitedReply, tooManyActiveReply, listReply, FOOTER,
 } from './reply.js';
 
 const DOMAIN = 'late.fyi';
@@ -226,6 +226,21 @@ function handleStop({ email, parsed, stateDir }) {
   });
 }
 
+function handleList({ email, stateDir }) {
+  const matches = findRecordsForSender(stateDir, email.from, () => true);
+  const trains = matches.map(m => ({
+    trainNum: m.rec.request?.trainNum,
+    line:     m.rec.resolved?.line || m.rec.request?.trainNum,
+    from:     m.rec.resolved?.from,
+    to:       m.rec.resolved?.to,
+    scheduledDeparture: m.rec.resolved?.scheduledDeparture,
+  }));
+  return listReply({
+    trains,
+    sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid(),
+  });
+}
+
 function handleConfig({ email, parsed, stateDir }) {
   if (parsed.field === 'channels') {
     // ntfy is paused — accept the request but force email-only and tell the
@@ -281,6 +296,8 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
       return handleStop({ email, parsed, stateDir });
     case 'config':
       return handleConfig({ email, parsed, stateDir });
+    case 'list':
+      return handleList({ email, stateDir });
     case 'help':
       // Static help reply; reuses missing-context body since it's the same teaching moment.
       return missingContextReply({ trainNum: 'help', sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid() });

@@ -18,7 +18,7 @@ function fromAddress(localPart = 'noreply') {
 }
 
 export const FOOTER = `— late.fyi
-feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
+list@${DOMAIN} (your active trains) | feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
 
 // ---- helpers ----
 
@@ -371,5 +371,28 @@ export function genericErrorReply({ trainNum, code, message, sender, incomingMsg
     body:
       `Got your request for ${trainNum}, but ran into a problem: ${message}\n\n` +
       `(Internal code: ${code})`,
+  });
+}
+
+// ---- §list: active trains for sender ----
+
+export function listReply({ trains, sender, incomingMsgid, ourMsgid }) {
+  let body;
+  if (!trains || trains.length === 0) {
+    body = `No trains currently being tracked.\n\nSend a new request: <trainnum>@${DOMAIN}`;
+  } else {
+    const count = trains.length;
+    const lines = trains.map(t => {
+      const dep = t.scheduledDeparture ? fmtDatetime(t.scheduledDeparture) : '?';
+      const stop = stopLinks(t.trainNum);
+      return `${t.line || t.trainNum} — ${t.from || '?'} → ${t.to || '?'}\n  Dep ${dep}\n  ${stop}`;
+    });
+    body = `${count} train${count === 1 ? '' : 's'} currently tracked:\n\n${lines.join('\n\n')}`;
+  }
+  return reply({
+    fromLocal: 'list',
+    subject: `Your active trains`,
+    to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
+    body,
   });
 }

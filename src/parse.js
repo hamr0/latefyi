@@ -19,7 +19,7 @@
 
 const TRAINNUM_RE = /^[A-Z]{0,4}\d{2,5}$/;
 const TRIP_RE     = /^[A-Za-z0-9_-]{1,32}$/;
-const RESERVED_LOCALPARTS = new Set(['config', 'stop', 'help']);
+const RESERVED_LOCALPARTS = new Set(['config', 'stop', 'help', 'list']);
 const VALID_CHANNELS = new Set(['email', 'ntfy', 'both']);
 
 // Forgiving header extractor. Matches `<keyword>` (with or without `:`),
@@ -201,6 +201,9 @@ export function parse(email) {
     }
     if (localPart === 'help') {
       return { kind: 'help' };
+    }
+    if (localPart === 'list') {
+      return { kind: 'list' };
     }
   }
 

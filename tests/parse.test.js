@@ -467,3 +467,10 @@ test('forgiving: explicit On: still wins (no double-injection)', () => {
   assert.equal(r.kind, 'track');
   assert.equal(r.onDate, '2026-05-04');
 });
+
+// ===== list =====
+
+test('list: email to list@ returns kind list', () => {
+  const r = parse(email({ to: 'list@late.fyi' }));
+  assert.equal(r.kind, 'list');
+});

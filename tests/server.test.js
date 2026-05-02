@@ -435,3 +435,46 @@ test('disambig: reply with unknown In-Reply-To is silently dropped', async () =>
   });
   assert.equal(r, null);
 });
+
+// ===== list =====
+
+test('list: returns active trains for sender', async () => {
+  const { stateDir } = setup();
+  // Track a train first
+  await handleInbound({
+    email: baseEmail({ msgid: '<a@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+
+  const r = await handleInbound({
+    email: baseEmail({ to: 'list@late.fyi', msgid: '<list-1@x>' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.match(r.subject, /active trains/i);
+  assert.match(r.body, /ICE 145/);
+});
+
+test('list: empty reply when no trains tracked', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({ to: 'list@late.fyi', msgid: '<list-2@x>' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.match(r.body, /No trains currently/);
+});
+
+test('list: only returns trains for the requesting sender', async () => {
+  const { stateDir } = setup();
+  // Track as sender A
+  await handleInbound({
+    email: baseEmail({ from: 'other@example.com', msgid: '<a@x>', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+
+  // List as sender B (baseEmail default: amr@example.com)
+  const r = await handleInbound({
+    email: baseEmail({ to: 'list@late.fyi', msgid: '<list-3@x>' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.match(r.body, /No trains currently/);
+});

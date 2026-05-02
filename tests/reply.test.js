@@ -264,3 +264,39 @@ test('unauthorizedSenderReply names the sender + how to fix', () => {
   assert.match(r.body, /stranger@x\.com/);
   assert.match(r.body, /allowed_senders/);
 });
+
+// ===== listReply =====
+
+import { listReply } from '../src/reply.js';
+
+test('listReply: empty list says no trains tracked', () => {
+  const r = listReply({ trains: [], sender: 'a@b', ourMsgid: '<m@x>' });
+  assert.match(r.subject, /active trains/i);
+  assert.match(r.body, /No trains currently/);
+});
+
+test('listReply: lists each train with dep datetime and stop link', () => {
+  const r = listReply({
+    trains: [{
+      trainNum: 'EUR9358', line: 'EUR 9358',
+      from: 'Amsterdam Centraal', to: 'Paris Nord',
+      scheduledDeparture: '2026-05-02T09:42:00Z',
+    }],
+    sender: 'a@b', ourMsgid: '<m@x>',
+  });
+  assert.match(r.body, /EUR 9358/);
+  assert.match(r.body, /Amsterdam Centraal → Paris Nord/);
+  assert.match(r.body, /2026-05-02 09:42/);
+  assert.match(r.body, /stop@late\.fyi/);
+});
+
+test('listReply: count in body is correct for multiple trains', () => {
+  const r = listReply({
+    trains: [
+      { trainNum: 'ICE145', line: 'ICE 145', from: 'A', to: 'B', scheduledDeparture: '2026-05-02T08:00:00Z' },
+      { trainNum: 'EUR9358', line: 'EUR 9358', from: 'C', to: 'D', scheduledDeparture: '2026-05-02T11:00:00Z' },
+    ],
+    sender: 'a@b', ourMsgid: '<m@x>',
+  });
+  assert.match(r.body, /2 trains currently tracked/);
+});
