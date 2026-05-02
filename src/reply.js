@@ -302,11 +302,12 @@ export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {
 
 export function stopReply({ scope, target, count, trains, sender, incomingMsgid, ourMsgid }) {
   if (scope === 'all') {
+    const list = (trains || []).map(t => `  - ${t.line || t.trainNum}${t.from && t.to ? ` (${t.from} → ${t.to})` : ''}`).join('\n');
     return reply({
       fromLocal: 'stop',
       subject: `Stopped all tracking`,
       to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
-      body: `Cleared ${count} active train${count === 1 ? '' : 's'}. No more updates until you start fresh.`,
+      body: `Cleared ${count} active train${count === 1 ? '' : 's'}:\n${list || '  (none)'}\n\nNo more updates until you start fresh.`,
     });
   }
   if (scope === 'trip') {
