@@ -218,6 +218,7 @@ function handleStop({ email, parsed, stateDir }) {
     trainNum: m.rec.request?.trainNum,
     from: m.rec.resolved?.from || m.rec.request?.from,
     to: m.rec.resolved?.to || m.rec.request?.to,
+    scheduledDeparture: m.rec.resolved?.scheduledDeparture,
   }));
   return stopReply({
     scope: parsed.scope === 'this' ? 'single' : parsed.scope,

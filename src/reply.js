@@ -301,8 +301,13 @@ export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {
 // ---- §7: STOP variants ----
 
 export function stopReply({ scope, target, count, trains, sender, incomingMsgid, ourMsgid }) {
+  function stopLine(t) {
+    const route = t.from && t.to ? ` (${t.from} → ${t.to})` : '';
+    const dep = t.scheduledDeparture ? `, dep ${fmtDatetime(t.scheduledDeparture)}` : '';
+    return `  - ${t.line || t.trainNum}${route}${dep}`;
+  }
   if (scope === 'all') {
-    const list = (trains || []).map(t => `  - ${t.line || t.trainNum}${t.from && t.to ? ` (${t.from} → ${t.to})` : ''}`).join('\n');
+    const list = (trains || []).map(stopLine).join('\n');
     return reply({
       fromLocal: 'stop',
       subject: `Stopped all tracking`,
@@ -311,7 +316,7 @@ export function stopReply({ scope, target, count, trains, sender, incomingMsgid,
     });
   }
   if (scope === 'trip') {
-    const list = (trains || []).map(t => `  - ${t.line || t.trainNum}${t.from && t.to ? ` (${t.from} → ${t.to})` : ''}`).join('\n');
+    const list = (trains || []).map(stopLine).join('\n');
     return reply({
       fromLocal: 'stop',
       subject: `Stopped trip "${target}"`,
