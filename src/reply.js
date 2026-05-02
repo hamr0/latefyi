@@ -28,9 +28,16 @@ function fmtTime(iso) {
   return d.toISOString().replace(/^.+T(\d{2}:\d{2}).+$/, '$1');
 }
 
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function dayName(iso) {
+  return DAYS[new Date(iso).getUTCDay()];
+}
+
 function fmtDatetime(iso) {
   if (!iso) return '?';
-  return new Date(iso).toISOString().replace(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}).+$/, '$1 $2');
+  const base = new Date(iso).toISOString().replace(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}).+$/, '$1 $2');
+  return `${dayName(iso)}, ${base}`;
 }
 
 function fmtDate(iso) {
@@ -50,7 +57,7 @@ function withFooter(body) {
 //   suffix: ` — 2026-05-06`
 function subjectTags({ trip, scheduledIso }) {
   const prefix = trip ? ` [${trip}]` : '';
-  const suffix = scheduledIso ? ` — ${scheduledIso.slice(0, 10)}` : '';
+  const suffix = scheduledIso ? ` — ${dayName(scheduledIso)}, ${scheduledIso.slice(0, 10)}` : '';
   return { prefix, suffix };
 }
 

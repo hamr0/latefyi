@@ -113,7 +113,7 @@ test('confirmation: subject includes — YYYY-MM-DD suffix', () => {
     resolved: sampleResolved(),
     sender: 'a@b',
   });
-  assert.match(r.subject, / — 2026-04-29$/);
+  assert.match(r.subject, / — Wednesday, 2026-04-29$/);
 });
 
 test('confirmation: subject combines trip prefix and date suffix', () => {
@@ -121,7 +121,7 @@ test('confirmation: subject combines trip prefix and date suffix', () => {
     resolved: sampleResolved({ trip: 'austria' }),
     sender: 'a@b',
   });
-  assert.match(r.subject, /Tracking ICE 145 \[austria\] — Amsterdam Centraal → Berlin Ostbahnhof — 2026-04-29$/);
+  assert.match(r.subject, /Tracking ICE 145 \[austria\] — Amsterdam Centraal → Berlin Ostbahnhof — Wednesday, 2026-04-29$/);
 });
 
 // ===== error templates =====
