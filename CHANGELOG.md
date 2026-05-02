@@ -10,6 +10,24 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.13.0 / PRD 1.13.0 — Dates everywhere + list command (2026-05-02)
+
+### Added
+
+- **`list@late.fyi` command.** Email `list@late.fyi` any time to get a reply listing all your currently tracked trains — line, route, and scheduled departure. Footer of every outbound email now surfaces `list@late.fyi (your active trains)` so it's one click away.
+
+### Changed
+
+- **Date always in subject.** Subject lines previously suppressed the ISO date suffix for same-day and next-day trains, relying on the email client's receipt timestamp. Subjects are frozen at send time and become ambiguous when read the following day. Date now always present: `Tracking EUR 9358 — Amsterdam Centraal → Paris Nord — Saturday, 2026-05-02`.
+- **Day-of-week added to all dates.** Both subject suffix and body scheduled line now include the day name: `dep Saturday, 2026-05-02 11:42 Amsterdam Centraal`. Applies to confirmation, list, and push replies.
+- **STOP ALL / STOP TRIP list the cleared trains with dates.** Previously just "Cleared 2 active trains." Now lists each train with route and dep datetime, same format as `list@` reply.
+
+### Operator
+
+- **`scripts/deploy.sh`** — one-command deploy: pulls SSH host/user/key from `pass latefyi/ssh/`, `git pull` on VPS, restarts both services. No secrets stored on disk.
+
+258/258 tests pass.
+
 ## 0.12.0 / PRD 1.12.0 — Bug fixes from code review (2026-05-01)
 
 ### Fixed
