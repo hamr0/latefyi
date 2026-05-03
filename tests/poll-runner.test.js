@@ -253,3 +253,67 @@ test('run: transport is forwarded to tick() and sendEmail is called when events 
 
   assert.ok(sent.length > 0, 'run() should have called transport.sendEmail via tick()');
 });
+
+// ===== silent-failure regression: failed sends are persisted + retried =====
+// Reproduces the May 2026 incident where the poll-runner generated 3 events
+// (tracking_started, departed, arrived) but every sendEmail failed silently
+// and the user received nothing. Now, failures are kept on the record under
+// state.pendingDeliveries and re-attempted on the next tick.
+
+test('tick: failed sendEmail is queued under pendingDeliveries for next-tick retry', async () => {
+  const { stateDir, logDir } = setup([recordFor('m1')]);
+  let failNext = true;
+  const transport = {
+    sendEmail: async () => { if (failNext) throw new Error('econnrefused'); },
+    sendNtfy: async () => {},
+  };
+  const getUserChannel = () => 'email';
+
+  // Tick 1: event generated, send fails → should land on pendingDeliveries.
+  await tick({
+    stateDir, logDir,
+    getClient: () => fakeClient(),
+    transport, getUserChannel,
+    now: new Date('2026-04-29T07:30:00Z').getTime(),
+  });
+  const recPath = join(stateDir, 'active', readdirSync(join(stateDir, 'active'))[0]);
+  let saved = JSON.parse(readFileSync(recPath, 'utf8'));
+  assert.equal(saved.state.pendingDeliveries.length, 1);
+  assert.equal(saved.state.pendingDeliveries[0].attempts, 1);
+  assert.equal(saved.state.pendingDeliveries[0].event.type, 'tracking_started');
+
+  // Tick 2: SMTP recovers. The pending event should be re-sent and cleared.
+  failNext = false;
+  const sent = [];
+  transport.sendEmail = async (msg) => { sent.push(msg); };
+  await tick({
+    stateDir, logDir,
+    getClient: () => fakeClient(),
+    transport, getUserChannel,
+    now: new Date('2026-04-29T07:30:31Z').getTime(),  // past 30s pre-anchor cadence
+  });
+  saved = JSON.parse(readFileSync(recPath, 'utf8'));
+  assert.equal(saved.state.pendingDeliveries.length, 0);
+  assert.ok(sent.some(m => /tracking_started|Tracking ICE/i.test(m.subject)));
+});
+
+test('tick: persistent failure is dropped after MAX_DELIVERY_ATTEMPTS (3)', async () => {
+  const { stateDir, logDir } = setup([recordFor('m1')]);
+  const transport = {
+    sendEmail: async () => { throw new Error('persistent'); },
+    sendNtfy: async () => {},
+  };
+  const getUserChannel = () => 'email';
+
+  // 3 ticks, 30s+ apart so cadence allows new polls.
+  let now = new Date('2026-04-29T07:30:00Z').getTime();
+  for (let i = 0; i < 3; i++) {
+    await tick({ stateDir, logDir, getClient: () => fakeClient(), transport, getUserChannel, now });
+    now += 31_000;
+  }
+  const recPath = join(stateDir, 'active', readdirSync(join(stateDir, 'active'))[0]);
+  const saved = JSON.parse(readFileSync(recPath, 'utf8'));
+  // After 3 failed attempts on the same event, it should be dropped from pending
+  // (so the queue doesn't grow unboundedly during a long outage).
+  assert.equal(saved.state.pendingDeliveries.length, 0);
+});

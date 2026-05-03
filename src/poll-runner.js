@@ -16,6 +16,8 @@ import { poll, shouldPollNow, isTerminal } from './poll.js';
 import { dispatch } from './push.js';
 import { senderHash } from './users.js';
 
+const MAX_DELIVERY_ATTEMPTS = 3;
+
 function ensureDirs(stateDir, logDir) {
   // Only `active/` is needed long-term. Terminal records are deleted, not
   // moved to `done/`. Malformed records are deleted with a log line, not
@@ -112,15 +114,22 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // Optional delivery: if a transport was provided, dispatch the events
     // through push.dispatch. The audit log above is independent of delivery
     // success — it always records what *would* have been sent.
+    //
+    // Retry semantics: events whose email/ntfy send fails are stashed in
+    // record.state.pendingDeliveries and re-attempted on the next tick. Each
+    // event has its own attempt counter; after MAX_DELIVERY_ATTEMPTS we drop
+    // it with a loud error log (the audit row in push.jsonl already exists).
     let updatedRecord = result.updatedRecord;
-    if (transport && getUserChannel && result.events.length > 0) {
+    const pending = (record.state?.pendingDeliveries || []);
+    const eventsToSend = [...pending.map(p => p.event), ...result.events];
+    if (transport && getUserChannel && eventsToSend.length > 0) {
       // ntfy is deferred — force email regardless of stored preference so
       // existing users with channel:'ntfy' don't fall into a silent void.
       // Remove this override (and revert to: getUserChannel(record.sender) || 'email')
       // when ntfy push is un-paused.
       const userChannel = 'email';
       const dispatchResults = await dispatch({
-        events: result.events,
+        events: eventsToSend,
         sender: record.sender,
         userChannel,
         line: record.resolved?.line,
@@ -131,13 +140,36 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
         transport,
         ntfyFailureCounter: record.state?.ntfyFailureCounter || 0,
       });
-      // Persist the rolling ntfy failure streak across polls.
+
+      const newPending = [];
+      for (let i = 0; i < dispatchResults.length; i++) {
+        const dr = dispatchResults[i];
+        const wasPending = i < pending.length;
+        const priorAttempts = wasPending ? pending[i].attempts : 0;
+        const failed = dr.results.filter(r => !r.ok);
+        if (failed.length === 0) continue;
+        const attempts = priorAttempts + 1;
+        for (const f of failed) {
+          console.error(`[poll-runner] delivery FAILED trainNum=${record.request.trainNum} senderHash=${senderHash(record.sender)} type=${dr.event.type} channel=${f.channel} attempt=${attempts} error=${f.error}`);
+        }
+        if (attempts >= MAX_DELIVERY_ATTEMPTS) {
+          console.error(`[poll-runner] giving up on event after ${attempts} attempts: trainNum=${record.request.trainNum} senderHash=${senderHash(record.sender)} type=${dr.event.type}`);
+          continue;
+        }
+        newPending.push({ event: dr.event, attempts });
+      }
+
       const lastStreak = dispatchResults.length ? dispatchResults[dispatchResults.length - 1].ntfyFailStreak : 0;
       updatedRecord = {
         ...updatedRecord,
-        state: { ...updatedRecord.state, ntfyFailureCounter: lastStreak },
+        state: {
+          ...updatedRecord.state,
+          ntfyFailureCounter: lastStreak,
+          pendingDeliveries: newPending,
+        },
       };
       summary.delivered = (summary.delivered || 0) + dispatchResults.length;
+      summary.deliveryFailures = (summary.deliveryFailures || 0) + (eventsToSend.length - dispatchResults.filter(r => r.results.every(x => x.ok)).length);
     }
 
     // Atomic write back (still in active/).
