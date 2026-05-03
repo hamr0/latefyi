@@ -83,10 +83,13 @@ test('tick: respects pollIntervalMs (skips file polled <30s ago in pre_anchor)',
 
 // ===== terminal: arrived → deleted =====
 
-test('tick: arrived record stays in active until a full poll tick fires and confirms arrival', async () => {
-  // shouldPollNow returns false for a record already in ACTIVE phase with a
-  // terminal snapshot — the file stays put until the next poll fires and
-  // isTerminal() evicts it. The following test proves the full eviction path.
+test('tick: arrived record past linger window is evicted on next tick (no stuck terminals)', async () => {
+  // Regression: a record that reached terminal phase (hasArrived=true) but
+  // wasn't unlinked on the same tick — because at that moment it was still
+  // inside the 5-min linger and isTerminal returned false — used to stay
+  // forever, since shouldPollNow then refused to re-poll terminal-phase
+  // records. Now tick() runs an isTerminal check at the top of the loop so
+  // stale terminal records are reaped even when shouldPollNow says skip.
   const arrivedSnap = {
     pollTimestamp: '2026-04-29T14:02:00Z',
     hasDeparted: true, hasArrived: true,
@@ -97,11 +100,11 @@ test('tick: arrived record stays in active until a full poll tick fires and conf
   });
   const { stateDir, logDir } = setup([rec]);
 
-  // 6 min after predicted arrival — linger expired, but shouldPollNow skips it
-  await tick({ stateDir, logDir, getClient: () => fakeClient(), now: new Date('2026-04-29T14:08:00Z').getTime() });
+  // 6 min after predicted arrival — linger expired.
+  const summary = await tick({ stateDir, logDir, getClient: () => fakeClient(), now: new Date('2026-04-29T14:08:00Z').getTime() });
 
-  // Record stays in active until the next poll fires and evicts it (see next test).
-  assert.equal(readdirSync(join(stateDir, 'active')).length, 1);
+  assert.equal(readdirSync(join(stateDir, 'active')).length, 0);
+  assert.equal(summary.terminal, 1);
 });
 
 test('tick: when shouldPollNow allows it and isTerminal, file is moved on the same tick', async () => {
@@ -297,23 +300,36 @@ test('tick: failed sendEmail is queued under pendingDeliveries for next-tick ret
   assert.ok(sent.some(m => /tracking_started|Tracking ICE/i.test(m.subject)));
 });
 
-test('tick: persistent failure is dropped after MAX_DELIVERY_ATTEMPTS (3)', async () => {
+test('tick: persistent failure is dropped after MAX_DELIVERY_ATTEMPTS, pages operator', async () => {
   const { stateDir, logDir } = setup([recordFor('m1')]);
+  const opAlerts = [];
   const transport = {
-    sendEmail: async () => { throw new Error('persistent'); },
+    sendEmail: async (msg) => {
+      // Operator alert goes through the same transport — let it through;
+      // user pushes still fail.
+      if (msg.to === 'ops@example.com') { opAlerts.push(msg); return; }
+      throw new Error('persistent');
+    },
     sendNtfy: async () => {},
   };
   const getUserChannel = () => 'email';
 
-  // 3 ticks, 30s+ apart so cadence allows new polls.
+  // 10 ticks, 30s+ apart so cadence allows new polls each time.
   let now = new Date('2026-04-29T07:30:00Z').getTime();
-  for (let i = 0; i < 3; i++) {
-    await tick({ stateDir, logDir, getClient: () => fakeClient(), transport, getUserChannel, now });
+  for (let i = 0; i < 10; i++) {
+    await tick({ stateDir, logDir, getClient: () => fakeClient(), transport, getUserChannel, now, operatorEmail: 'ops@example.com' });
     now += 31_000;
   }
   const recPath = join(stateDir, 'active', readdirSync(join(stateDir, 'active'))[0]);
   const saved = JSON.parse(readFileSync(recPath, 'utf8'));
-  // After 3 failed attempts on the same event, it should be dropped from pending
+  // After 10 failed attempts on the same event, it should be dropped from pending
   // (so the queue doesn't grow unboundedly during a long outage).
   assert.equal(saved.state.pendingDeliveries.length, 0);
+  // Operator should have been paged exactly once (one give-up event).
+  assert.equal(opAlerts.length, 1);
+  assert.match(opAlerts[0].subject, /dropped tracking_started for ICE145/);
+
+  // delivery-errors.log should exist and contain GAVE UP line.
+  const errLog = readFileSync(join(logDir, 'delivery-errors.log'), 'utf8');
+  assert.match(errLog, /GAVE UP/);
 });

@@ -16,7 +16,10 @@ import { poll, shouldPollNow, isTerminal } from './poll.js';
 import { dispatch } from './push.js';
 import { senderHash } from './users.js';
 
-const MAX_DELIVERY_ATTEMPTS = 3;
+// 10 attempts × 30s minimum cadence ≈ 5 min retry window. Long enough to
+// ride out a postfix restart / nodemailer hiccup, short enough that a real
+// outage pages the operator within minutes (see operatorAlert below).
+const MAX_DELIVERY_ATTEMPTS = 10;
 
 function ensureDirs(stateDir, logDir) {
   // Only `active/` is needed long-term. Terminal records are deleted, not
@@ -49,10 +52,11 @@ function readJson(path) {
 //   getUserChannel?  (sender: string) → 'email'|'ntfy'|'both'
 //                  Required if transport is provided. Looks up per-user pref.
 //
-export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null }) {
+export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null, operatorEmail = null }) {
   ensureDirs(stateDir, logDir);
   const activeDir = join(stateDir, 'active');
   const pushLog = join(logDir, 'push.jsonl');
+  const deliveryErrLog = join(logDir, 'delivery-errors.log');
 
   const summary = { polled: 0, skipped: 0, events: 0, terminal: 0, errors: 0 };
 
@@ -69,6 +73,17 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
       summary.errors++;
       console.error(`[poll-runner] dropping malformed record ${f}`);
       try { unlinkSync(path); } catch { /* race with another tick — fine */ }
+      continue;
+    }
+
+    // Evict stale terminal records that shouldPollNow refuses to re-poll.
+    // Without this, an arrived record where the eviction path didn't fire on
+    // the first arrived-tick (e.g., now - predictedArrival was still under the
+    // 5-min linger) sticks around forever — phase=terminal blocks shouldPollNow,
+    // which blocks the eviction check below. Run isTerminal independently here.
+    if (isTerminal(record, now)) {
+      try { unlinkSync(path); } catch { /* race — fine */ }
+      summary.terminal++;
       continue;
     }
 
@@ -149,11 +164,32 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
         const failed = dr.results.filter(r => !r.ok);
         if (failed.length === 0) continue;
         const attempts = priorAttempts + 1;
-        for (const f of failed) {
-          console.error(`[poll-runner] delivery FAILED trainNum=${record.request.trainNum} senderHash=${senderHash(record.sender)} type=${dr.event.type} channel=${f.channel} attempt=${attempts} error=${f.error}`);
+        const sh = senderHash(record.sender);
+        for (const fail of failed) {
+          const line = `[${new Date(now).toISOString()}] delivery FAILED trainNum=${record.request.trainNum} senderHash=${sh} type=${dr.event.type} channel=${fail.channel} attempt=${attempts} error=${fail.error}`;
+          console.error(`[poll-runner] ${line}`);
+          try { appendFileSync(deliveryErrLog, line + '\n'); } catch { /* best-effort */ }
         }
         if (attempts >= MAX_DELIVERY_ATTEMPTS) {
-          console.error(`[poll-runner] giving up on event after ${attempts} attempts: trainNum=${record.request.trainNum} senderHash=${senderHash(record.sender)} type=${dr.event.type}`);
+          const giveUp = `[${new Date(now).toISOString()}] GAVE UP after ${attempts} attempts trainNum=${record.request.trainNum} senderHash=${sh} type=${dr.event.type} channels=${failed.map(x => x.channel).join(',')} lastError=${failed[0]?.error}`;
+          console.error(`[poll-runner] ${giveUp}`);
+          try { appendFileSync(deliveryErrLog, giveUp + '\n'); } catch { /* best-effort */ }
+          // Page the operator. Sent through the same SMTP — if SMTP is the
+          // thing that's broken, this also fails (and gets logged), but we
+          // don't have a second channel to fall back to.
+          if (operatorEmail && transport?.sendEmail) {
+            try {
+              await transport.sendEmail({
+                from: 'latefyi <noreply@late.fyi>',
+                to: operatorEmail,
+                subject: `[late.fyi] dropped ${dr.event.type} for ${record.request.trainNum}`,
+                body: `${giveUp}\n\nUser event was dropped after ${MAX_DELIVERY_ATTEMPTS} retries.\nCheck logs/delivery-errors.log and journalctl -u latefyi-poller.\n`,
+                headers: {},
+              });
+            } catch (e) {
+              console.error(`[poll-runner] operator-alert SEND FAILED: ${e.message}`);
+            }
+          }
           continue;
         }
         newPending.push({ event: dr.event, attempts });
@@ -189,10 +225,10 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
 }
 
 // Long-running entry point. Calls tick() at intervalMs cadence.
-export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null }) {
+export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null, operatorEmail = null, now = null }) {
   while (!signal?.aborted) {
     try {
-      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel });
+      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, now: now ?? Date.now() });
       if (s.polled || s.events || s.terminal || s.errors) {
         console.log(`[poll-runner] ${new Date().toISOString()} polled=${s.polled} events=${s.events} terminal=${s.terminal} errors=${s.errors} skipped=${s.skipped}`);
       }
@@ -256,6 +292,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { getOrCreate } = await import('./users.js');
   getUserChannel = (sender) => getOrCreate(sender, stateDir).channel || 'email';
 
+  const operatorEmail = process.env.OPERATOR_EMAIL || null;
+  if (operatorEmail) console.log(`[poll-runner] operator alerts → ${operatorEmail}`);
+  else console.warn('[poll-runner] OPERATOR_EMAIL not set — dropped events will only be visible in logs');
+
   console.log(`[poll-runner] starting; stateDir=${stateDir} logDir=${logDir}`);
-  await run({ stateDir, logDir, getClient, transport, getUserChannel });
+  await run({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail });
 }
