@@ -17,8 +17,7 @@ function fromAddress(localPart = 'noreply') {
   return `${DISPLAY_NAME} <${localPart}@${DOMAIN}>`;
 }
 
-export const FOOTER = `— late.fyi
-list@${DOMAIN} (your active trains) | feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
+export const FOOTER = `-- \nlate.fyi | list@${DOMAIN} (your active trains) | feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
 
 // ---- helpers ----
 
