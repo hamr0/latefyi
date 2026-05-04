@@ -275,8 +275,8 @@ export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
     body:
-      `Email from ${sender} isn't authorized for this latefyi instance.\n` +
-      `Add to config.json \`allowed_senders\` and redeploy.`,
+      `Email from ${sender} isn't authorized for this late.fyi instance.\n` +
+      `If you think this is a mistake, contact the operator (feedback@late.fyi).`,
   });
 }
 

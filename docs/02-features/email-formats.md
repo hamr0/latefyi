@@ -211,14 +211,14 @@ Reply STOP <TRAINNUM> on any of them, or STOP ALL to clear everything, then rese
 
 ### unauthorized sender
 
-**Trigger:** sender not in `allowed_senders` (only fires when allowlist is non-empty).
+**Trigger:** the sender's email address is not in the operator's allowlist. **Currently dormant**: production runs with `ALLOWED_SENDERS=` (empty) in `/etc/latefyi.env`, which the ingest server treats as "no allowlist — open to everyone" (`src/ingest-server.js:119`). This template only fires if the operator populates the env var with a comma-separated list of permitted addresses (e.g. `ALLOWED_SENDERS=alice@example.com,bob@example.com`) and restarts `latefyi-ingest`.
 
 **From:** `latefyi <help@late.fyi>`
 **Subject:** `Sender not allowlisted`
 
 ```
-Email from you@example.com isn't authorized for this latefyi instance.
-Add to config.json `allowed_senders` and redeploy.
+Email from you@example.com isn't authorized for this late.fyi instance.
+If you think this is a mistake, contact the operator (feedback@late.fyi).
 ```
 
 ### STOP confirmation (single train)

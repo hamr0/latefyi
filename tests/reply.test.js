@@ -259,10 +259,10 @@ test('genericErrorReply surfaces code + message', () => {
   assert.match(r.body, /something_failed/);
 });
 
-test('unauthorizedSenderReply names the sender + how to fix', () => {
+test('unauthorizedSenderReply names the sender + points at the operator', () => {
   const r = unauthorizedSenderReply({ sender: 'stranger@x.com' });
   assert.match(r.body, /stranger@x\.com/);
-  assert.match(r.body, /allowed_senders/);
+  assert.match(r.body, /feedback@late\.fyi/);
 });
 
 // ===== listReply =====
