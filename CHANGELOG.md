@@ -10,6 +10,52 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.0 / PRD 1.14.0 — Notification reliability + station-local time (2026-05-04)
+
+Two real-world incidents drove this release:
+
+- **2026-05-03 / TGV9810 missed.** All three push events (`tracking_started`, `departed`, `arrived`) were generated and recorded in `push.jsonl`, but **postfix never received any send attempt**. Root cause: a cron-spawned poll-runner orphan (started by `wake.sh` because its pgrep didn't match systemd's relative-path argv) was racing the systemd-managed daemon, ran with no environment (no `SMTP_HOST`), and the dispatch error was silently swallowed by an empty `try/catch`.
+- **2026-05-04 / EUR9340 confusion.** Confirmation said `dep Monday, 2026-05-04 09:10` for a train actually departing 11:10 Amsterdam-local. All time formatters used `new Date(iso).toISOString()` which forces UTC and dropped the offset HAFAS gave us per-station.
+
+### Fixed
+
+- **Silent push failures (root + visibility):**
+  - `src/poll-runner.js` — failed sends are no longer silently dropped. Every failed channel attempt logs to systemd journal **and** appends to `logs/delivery-errors.log` with timestamp / trainNum / senderHash / channel / attempt / error. Each event is retried up to `MAX_DELIVERY_ATTEMPTS` (10, ≈ 5-min window) via a per-record `state.pendingDeliveries` queue. After give-up: operator alert mailed to `OPERATOR_EMAIL` (subject `[late.fyi] dropped <type> for <trainNum>`).
+  - `src/poll-runner.js tick()` — runs `isTerminal()` at the top of the per-record loop. Without it, an arrived record whose linger window hadn't expired on the same poll tick stayed in `state/active/` forever, since `shouldPollNow` then refused to re-poll terminal-phase records. Cleaned up the stuck TGV9810 record.
+
+- **Single-daemon enforcement:**
+  - `scripts/wake.sh` — removed the "ensure poll-runner alive" block that spawned `nohup node …` orphans every minute (no env, old code, swallowed errors). systemd is now the single authority for the daemon. wake.sh is a pure pending → active activator.
+  - `systemd/latefyi-{poller,ingest}.service` (vendored in repo) — `ExecStart` wrapped in `flock -n /run/latefyi-{poller,ingest}/lock` so a 2nd instance fails fast. `RuntimeDirectory=` provides the lock path. `ExecStartPre=-pkill` catches any orphan spawned outside systemd before flock acquires.
+  - `scripts/install-units.sh` — idempotent VPS push of the units (cat → systemd, daemon-reload, kill orphans, restart).
+
+- **Station-local time everywhere:**
+  - `src/time-fmt.js` (new) — `parseLocal(iso)` reads literal Y/M/D/HH:MM/offset from the ISO string instead of going through `Date.toISOString()`. `fmtTime`, `fmtDate`, `fmtDatetime`, `dayName` all switch to it. `shiftIso(iso, deltaMin)` shifts while preserving the original offset (used for T-30 anchors).
+  - `src/reply.js` and `src/diff.js` — share the new module. The same UTC-conversion bug existed independently in both; now there's a single source.
+  - Display rule: time is always station-local. The station name appears next to the time on every line, so we don't add a TZ label — `dep Monday, 2026-05-04 11:10 Amsterdam Centraal` reads as Amsterdam time by construction.
+  - T-30 anchor uses `arr` for pickup mode (mode A) and `dep` for boarding mode (mode B).
+
+- **`alreadyArrived` reply** — subject and body now name the actual arrival date instead of "today" (which is stale by the next morning when the email is forwarded/archived). Suggested resend hint is a copy-pasteable `On: <next-day>` header.
+
+- **`unauthorizedSender` reply** — body no longer points at a nonexistent `config.json`. Now says "contact the operator (feedback@late.fyi)". Doc explicitly notes the allowlist is currently empty in production (open to all), so the template is dormant unless `ALLOWED_SENDERS` is populated.
+
+### Changed
+
+- **All push notifications use the rich confirmation shape** (`src/diff.js`). Every change-event body opens with `<line>, <fromName> → <toName>.` so it's self-identifying when read in isolation. Rows that changed get a leading `> ` marker and inline annotations: `(+5min)` next to a delayed time, `(was 15a)` next to a re-platformed train. `cancelled`, `replaced`, `terminating_short`, `departed`, `arrived`, `tracking_lost` all also start with the same self-id line. Title still names the event (e.g. `EUR 9340 platform CHANGED → 16b`) so inbox preview is useful.
+
+### Operator
+
+- **`scripts/vps.sh`** — one-shot VPS access wrapper. Pulls SSH host/user/key from `pass latefyi/ssh/`, materialises the PEM-wrapped key once at `$LATEFYI_SSH_KEY` (default `/tmp/latefyi_key`). `scripts/vps.sh '<cmd>'` for one-off, `scripts/vps.sh` for interactive.
+
+- **`OPERATOR_EMAIL`** env var (`/etc/latefyi.env`). Set to your own email. You receive a `[late.fyi] dropped …` alert only when the system has exhausted retries on a user event. Quiet inbox = healthy system.
+
+- **`logs/delivery-errors.log`** — append-only local mirror of every failed delivery attempt. `tail -f` for live view. Survives even when SMTP itself is the broken thing.
+
+### Documentation
+
+- **`docs/02-features/email-formats.md`** — full catalogue of every email the system reads or writes. Inbound (per-localpart routing + header surface), outbound replies, push notifications (with rich-body samples), operator alerts. Backed by `scripts/dump-email-samples.js`, which regenerates samples by calling each template — re-run after touching `reply.js` or `diff.js` to refresh the doc.
+
+260/260 tests pass.
+
 ## 0.13.0 / PRD 1.13.0 — Dates everywhere + list command (2026-05-02)
 
 ### Added
