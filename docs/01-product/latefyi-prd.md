@@ -648,6 +648,8 @@ What gets pushed, ever, falls into exactly four categories:
 
 **Mode applicability matrix:** every event in Windows 1, 3, and 4 applies to both modes. Window 2 differs only in *which* station the "platform"/"delay" applies to: in Mode B it's the user's `From:` (departure-platform-related); in Mode A it's the user's `To:` (arrival-platform-related). The thresholds and priorities are identical.
 
+**Body shape per mode (1.14.5):** push event bodies mirror the confirmation reply shape for their mode. Mode B bodies retain the boarding layout (`Tracking <line>, <from> → <to>.` headline + `Scheduled: dep ... arr ...` + dep+arr platforms). Mode A bodies collapse to pickup form (`Picking up <line> at <to>.` for the T-30 push, `<line> arrival platform: <p>, at <to>.` for platform events, `<line> arrival +Nmin, at <to>.` for delays; `Scheduled arrival: <time> <to>` line + arrival-platform field only — no origin, no dep line, no dep-platform field). Terminal events (`terminating_short`, `arrived`) drop the route tail in Mode A to avoid the tautological `<verb> X, at X` reading. Push subject's date suffix anchors on arrival for Mode A so it tracks the confirmation.
+
 **Critical-event override (§6):** cancellation, full route disruption, terminating short, replacement bus → always send via every available channel regardless of the user's stored preference.
 
 **Suppression by default:** silence is the norm. The vast majority of polls produce no push. See "Suppression" below.
