@@ -25,20 +25,26 @@ const DEFAULT_OPTS = {
   delayInTransitMin: 5,
 };
 
-function fmtTime(iso) {
-  if (!iso) return '?';
-  return new Date(iso).toISOString().replace(/^.+T(\d{2}:\d{2}).+$/, '$1');
-}
+import { fmtTime, fmtDatetime } from './time-fmt.js';
+
 function plat(p) { return p ?? '–'; }
 function delay(d) { return `+${d ?? 0}min`; }
 
+// T-30 push: same shape as the original confirmation reply (full,
+// station-local times with date + day-name, station names beside times,
+// platform/status block) so the user gets a coherent re-anchor instead
+// of a sparse "departed at 09:10" UTC blurb. This is the only push that
+// repeats the schedule context — subsequent pushes (departed/arrived/
+// delay/platform-change) are deltas and stay terse.
 function startedBody(curr) {
+  const line = curr.line || curr.trainNum;
+  const fromName = curr.fromName ?? '?';
+  const toName = curr.toName ?? '?';
   const lines = [
-    `${curr.fromName ?? '?'} → ${curr.toName ?? '?'}`,
-    `Scheduled: dep ${fmtTime(curr.scheduledDeparture)}, arr ${fmtTime(curr.scheduledArrival)}`,
+    `${line}, ${fromName} → ${toName}.`,
+    `Scheduled: dep ${fmtDatetime(curr.scheduledDeparture)} ${fromName}, arr ${fmtDatetime(curr.scheduledArrival)} ${toName}.`,
+    `Departure platform: ${curr.departurePlatform || 'TBC'}    Arrival platform: ${curr.arrivalPlatform || 'TBC'}`,
   ];
-  if (curr.departurePlatform) lines.push(`Departure platform: ${curr.departurePlatform}`);
-  if (curr.arrivalPlatform)   lines.push(`Arrival platform: ${curr.arrivalPlatform}`);
   if (curr.departureDelayMin) lines.push(`Currently +${curr.departureDelayMin}min`);
   return lines.join('\n');
 }
