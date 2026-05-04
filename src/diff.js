@@ -87,7 +87,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'cancelled',
       priority: 'urgent',
       title: `${curr.line || curr.trainNum} CANCELLED`,
-      body: `${curr.line || curr.trainNum} (${curr.fromName ?? '?'} → ${curr.toName ?? '?'}) is cancelled.`,
+      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nThis service is cancelled.`,
     });
     return events;
   }
@@ -96,7 +96,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'replaced',
       priority: 'urgent',
       title: `${curr.line || curr.trainNum} replacement service`,
-      body: `${curr.line || curr.trainNum} replaced — check operator app for the substitute service.`,
+      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nReplaced — check operator app for the substitute service.`,
     });
   }
 
@@ -173,7 +173,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'terminating_short',
       priority: 'urgent',
       title: `${curr.line || curr.trainNum} TERMINATING before ${curr.toName}`,
-      body: `Train will not reach ${curr.toName}. Check operator app for onward connection.`,
+      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nTrain will not reach ${curr.toName}. Check operator app for onward connection.`,
     });
   }
 
@@ -183,7 +183,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'departed',
       priority: 'default',
       title: `${curr.line || curr.trainNum} departed ${curr.fromName ?? '?'}`,
-      body: `Left at ~${fmtTime(curr.predictedDeparture)}, ${delay(curr.departureDelayMin)}.`,
+      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nLeft at ~${fmtTime(curr.predictedDeparture)}, ${delay(curr.departureDelayMin)}.`,
     });
   }
 
@@ -193,7 +193,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'arrived',
       priority: 'default',
       title: `${curr.line || curr.trainNum} arrived ${curr.toName ?? '?'}`,
-      body: `Arrived ~${fmtTime(curr.predictedArrival)}, platform ${plat(curr.arrivalPlatform)}. Tracking ended.`,
+      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nArrived ~${fmtTime(curr.predictedArrival)}, platform ${plat(curr.arrivalPlatform)}. Tracking ended.`,
     });
   }
 
