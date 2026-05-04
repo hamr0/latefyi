@@ -20,28 +20,76 @@ function fromAddress(localPart = 'noreply') {
 export const FOOTER = `-- \nlate.fyi | list@${DOMAIN} (your active trains) | feedback@${DOMAIN} | we don't store your email past notifications or STOP`;
 
 // ---- helpers ----
+//
+// HAFAS gives station-LOCAL times with their offset baked in
+// (e.g. '2026-05-04T11:10:00+02:00' for an 11:10 CEST departure). All the
+// formatters below parse the literal HH:MM/YYYY-MM-DD components OUT of the
+// ISO string instead of going through `new Date(...).toISOString()`, which
+// would convert to UTC and silently shift the user's view by 1-2 hours —
+// the May 2026 incident where a user thought EUR 9340 (dep 11:10 CEST) had
+// already departed because the email said "09:10".
+
+const ISO_LOCAL = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?([+-]\d{2}:?\d{2}|Z)?/;
+
+function parseLocal(iso) {
+  if (!iso) return null;
+  // Accept Date objects too — they have no offset, so we treat them as UTC.
+  // Callers that want station-local time should pass an ISO string with
+  // offset (which is what HAFAS gives us natively).
+  const s = (iso instanceof Date) ? iso.toISOString() : iso;
+  if (typeof s !== 'string') return null;
+  const m = s.match(ISO_LOCAL);
+  if (!m) return null;
+  const [, y, mo, d, hh, mm, off] = m;
+  return { y, mo, d, hh, mm, off: off || 'Z' };
+}
+
+// Shift an ISO timestamp by deltaMin minutes, preserving its original offset.
+// `shiftIso('2026-05-04T11:10:00+02:00', -30)` → '2026-05-04T10:40:00+02:00'.
+// Used for T-30 calculations so the displayed time matches the station's
+// local clock instead of jumping to UTC.
+export function shiftIso(iso, deltaMin) {
+  const p = parseLocal(iso);
+  if (!p) return null;
+  const t = Date.UTC(+p.y, +p.mo - 1, +p.d, +p.hh, +p.mm) + deltaMin * 60_000;
+  const d = new Date(t);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00${p.off === 'Z' ? 'Z' : p.off}`;
+}
+
+// Compact label for the offset: "Z" → "UTC", "+02:00" → "UTC+02".
+function tzLabel(off) {
+  if (!off || off === 'Z') return 'UTC';
+  const m = off.match(/^([+-])(\d{2}):?(\d{2})/);
+  if (!m) return 'UTC';
+  return m[3] === '00' ? `UTC${m[1]}${m[2]}` : `UTC${m[1]}${m[2]}:${m[3]}`;
+}
 
 function fmtTime(iso) {
-  if (!iso) return '?';
-  const d = new Date(iso);
-  return d.toISOString().replace(/^.+T(\d{2}:\d{2}).+$/, '$1');
+  const p = parseLocal(iso);
+  return p ? `${p.hh}:${p.mm}` : '?';
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function dayName(iso) {
-  return DAYS[new Date(iso).getUTCDay()];
+  const p = parseLocal(iso);
+  if (!p) return '?';
+  // Day-of-week from the LOCAL date, not the JS-coerced UTC date — otherwise
+  // a 23:30 local departure on Sunday gets labelled "Monday" because UTC
+  // already rolled over.
+  return DAYS[new Date(`${p.y}-${p.mo}-${p.d}T12:00:00Z`).getUTCDay()];
 }
 
 function fmtDatetime(iso) {
-  if (!iso) return '?';
-  const base = new Date(iso).toISOString().replace(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}).+$/, '$1 $2');
-  return `${dayName(iso)}, ${base}`;
+  const p = parseLocal(iso);
+  if (!p) return '?';
+  return `${dayName(iso)}, ${p.y}-${p.mo}-${p.d} ${p.hh}:${p.mm} ${tzLabel(p.off)}`;
 }
 
 function fmtDate(iso) {
-  if (!iso) return '?';
-  return new Date(iso).toISOString().slice(0, 10);
+  const p = parseLocal(iso);
+  return p ? `${p.y}-${p.mo}-${p.d}` : '?';
 }
 
 function withFooter(body) {
@@ -113,7 +161,11 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
   const toName = resolved.to || '?';
   const dep = resolved.schedule?.scheduledDeparture;
   const arr = resolved.schedule?.scheduledArrival;
-  const t30 = dep ? new Date(new Date(dep).getTime() - 30 * 60 * 1000) : null;
+  // T-30 in the same timezone as the anchor (dep station's local clock for
+  // boarding mode, arr station's for pickup mode). Preserves the offset so
+  // fmtTime renders station-local instead of UTC.
+  const anchor = (resolved.mode === 'A' ? arr : dep);
+  const t30 = anchor ? shiftIso(anchor, -30) : null;
 
   const tripLine = resolved.trip ? `\nTrip: ${resolved.trip}` : '';
   const updatesLine = `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.`;
@@ -253,9 +305,7 @@ export function alreadyArrivedReply({ trainNum, line, toStation, arrivedAt, send
 // ---- abuse limits ----
 
 function fmtDateTime(iso) {
-  if (!iso) return '?';
-  const d = new Date(iso);
-  return d.toISOString().replace(/^(.+T\d{2}:\d{2}).+$/, '$1Z');
+  return fmtDatetime(iso);
 }
 
 export function rateLimitedReply({ reason, retryAt, sender, incomingMsgid, ourMsgid }) {
