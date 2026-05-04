@@ -12,15 +12,18 @@ EnvironmentFile=/etc/latefyi.env
 
 # Same anti-dual-run guard as the poller — see latefyi-poller.service.
 ExecStartPre=-/usr/bin/pkill -f /opt/latefyi/src/ingest-server.js
-ExecStart=/usr/bin/flock -n /run/latefyi-ingest.lock /usr/bin/node src/ingest-server.js
+ExecStart=/usr/bin/flock -n /run/latefyi-ingest/lock /usr/bin/node src/ingest-server.js
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+RuntimeDirectory=latefyi-ingest
+RuntimeDirectoryMode=0750
+
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/latefyi /run
+ReadWritePaths=/opt/latefyi
 ProtectHome=true
 PrivateTmp=true
 

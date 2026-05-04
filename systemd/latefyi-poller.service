@@ -16,15 +16,21 @@ EnvironmentFile=/etc/latefyi.env
 # two daemons raced on state/active/ — old one wrote plaintext sender to
 # push.jsonl and dropped sends silently — would have been impossible.
 ExecStartPre=-/usr/bin/pkill -f /opt/latefyi/src/poll-runner.js
-ExecStart=/usr/bin/flock -n /run/latefyi-poller.lock /usr/bin/node src/poll-runner.js
+ExecStart=/usr/bin/flock -n /run/latefyi-poller/lock /usr/bin/node src/poll-runner.js
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# RuntimeDirectory= creates /run/latefyi-poller owned by the service user on
+# start, deletes it on stop. Gives flock a writable location without granting
+# the service user broad /run access.
+RuntimeDirectory=latefyi-poller
+RuntimeDirectoryMode=0750
+
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/latefyi /run
+ReadWritePaths=/opt/latefyi
 ProtectHome=true
 PrivateTmp=true
 

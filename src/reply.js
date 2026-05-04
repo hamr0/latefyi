@@ -57,14 +57,6 @@ export function shiftIso(iso, deltaMin) {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00${p.off === 'Z' ? 'Z' : p.off}`;
 }
 
-// Compact label for the offset: "Z" → "UTC", "+02:00" → "UTC+02".
-function tzLabel(off) {
-  if (!off || off === 'Z') return 'UTC';
-  const m = off.match(/^([+-])(\d{2}):?(\d{2})/);
-  if (!m) return 'UTC';
-  return m[3] === '00' ? `UTC${m[1]}${m[2]}` : `UTC${m[1]}${m[2]}:${m[3]}`;
-}
-
 function fmtTime(iso) {
   const p = parseLocal(iso);
   return p ? `${p.hh}:${p.mm}` : '?';
@@ -81,10 +73,13 @@ function dayName(iso) {
   return DAYS[new Date(`${p.y}-${p.mo}-${p.d}T12:00:00Z`).getUTCDay()];
 }
 
+// All times are station-local (HAFAS gives them with the right offset
+// per-station). The station name appears right next to the time in the
+// rendered text, so we don't add a TZ label — it'd be redundant noise.
 function fmtDatetime(iso) {
   const p = parseLocal(iso);
   if (!p) return '?';
-  return `${dayName(iso)}, ${p.y}-${p.mo}-${p.d} ${p.hh}:${p.mm} ${tzLabel(p.off)}`;
+  return `${dayName(iso)}, ${p.y}-${p.mo}-${p.d} ${p.hh}:${p.mm}`;
 }
 
 function fmtDate(iso) {
