@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 #
-# wake.sh — cron-driven activator + housekeeping.
-# PRD §13.8.
+# wake.sh — cron-driven pending-request activator.
 #
 # Run every minute via cron:
 #   * * * * * /opt/latefyi/scripts/wake.sh >> /opt/latefyi/logs/wake.log 2>&1
 #
-# Responsibilities:
-#   1. Move pending/*.json whose poll_start_time has arrived → active/
-#   2. Ensure the poll-runner daemon is alive (start if not)
+# Responsibility:
+#   Move pending/*.json whose poll_start_time has arrived → active/
 #
-# Dependencies: bash, jq, date(GNU coreutils), find, pgrep.
+# The poll-runner daemon is owned by systemd (latefyi-poller.service) — do
+# NOT start it here. This script used to spawn it via nohup whenever pgrep
+# missed systemd's process (different argv path), which produced a duplicate
+# daemon every minute that ran with no env vars (no SMTP_HOST → sends failed
+# silently). May 2026 incident with EUR9316: the orphan beat the systemd
+# process to events and dropped them.
+#
+# Dependencies: bash, jq, date(GNU coreutils).
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STATE_DIR="${STATE_DIR:-$ROOT/state}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs}"
-POLL_RUNNER="${POLL_RUNNER:-$ROOT/src/poll-runner.js}"
 
 mkdir -p "$STATE_DIR/pending" "$STATE_DIR/active" "$LOG_DIR"
 
@@ -45,14 +49,6 @@ for f in "$STATE_DIR"/pending/*.json; do
     ACTIVATED=$((ACTIVATED + 1))
   fi
 done
-
-# 2. Ensure poll-runner is running (only if it exists; Phase 3 introduces it).
-if [ -f "$POLL_RUNNER" ]; then
-  if ! pgrep -f "node $POLL_RUNNER" >/dev/null 2>&1; then
-    nohup node "$POLL_RUNNER" >> "$LOG_DIR/poller.log" 2>&1 &
-    echo "$(date -u +%FT%TZ) poll-runner started (pid $!)"
-  fi
-fi
 
 [ "$ACTIVATED" -gt 0 ] && echo "$(date -u +%FT%TZ) wake.sh: activated $ACTIVATED"
 exit 0

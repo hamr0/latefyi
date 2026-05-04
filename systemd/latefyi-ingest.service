@@ -1,0 +1,28 @@
+[Unit]
+Description=latefyi inbound email ingest server
+After=network.target postfix.service
+Wants=postfix.service
+
+[Service]
+Type=simple
+User=latefyi
+Group=latefyi
+WorkingDirectory=/opt/latefyi
+EnvironmentFile=/etc/latefyi.env
+
+# Same anti-dual-run guard as the poller — see latefyi-poller.service.
+ExecStartPre=-/usr/bin/pkill -f /opt/latefyi/src/ingest-server.js
+ExecStart=/usr/bin/flock -n /run/latefyi-ingest.lock /usr/bin/node src/ingest-server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/latefyi /run
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
