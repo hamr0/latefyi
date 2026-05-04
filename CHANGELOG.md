@@ -10,6 +10,49 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.4 / PRD 1.14.4 — Mode A pickup confirmation + post-refresh EACCES fix (2026-05-04)
+
+### Changed
+
+Confirmation reply now branches on `resolved.mode`. Mode A (pickup, `To:` only) gets a shape that drops irrelevant origin/departure data:
+
+Before (Mode A):
+```
+Subject: Tracking EUR 9340, ? → Paris Nord
+Body:    Tracking EUR 9340, ? → Paris Nord.
+         Scheduled: dep ? ?, arr Monday, 2026-05-04 14:42 Paris Nord.
+         Departure platform: TBC    Arrival platform: TBC
+         Status: TBC
+         Updates by email starting T-30 at 14:12.
+```
+
+After (Mode A):
+```
+Subject: Pickup EUR 9340 — Paris Nord — Monday, 2026-05-04
+Body:    Picking up EUR 9340 at Paris Nord.
+         Scheduled arrival: Monday, 2026-05-04 14:42 Paris Nord.
+         Arrival platform: TBC
+         Status: TBC
+         Updates by email starting T-30 at 14:12.
+```
+
+- Subject verb: `Pickup` (vs `Tracking`); no `→` arrow; date suffix anchored on arrival time.
+- Body opens "Picking up X at Y" instead of synthesising a "? → Y" route.
+- Drops the `dep ? ?` line and `Departure platform` field — neither concept applies when the user isn't boarding.
+- T-30 anchor was already correct (arrival for Mode A, departure for Mode B); now the surrounding copy matches.
+
+Mode B (boarding, `From:` present) is unchanged — same "Tracking X, A → B." opener, same dep/arr line, same dep+arr platforms.
+
+### Fixed
+
+`latefyi-ingest` crash-loop on `/opt/latefyi/config/disposable-domains.txt` (`EACCES`) after the first quarterly refresh. Root cause: cron runs as root, `mktemp` creates 0600, `mv` preserves that mode, so the refreshed file landed `0600 root:root` — unreadable by the `latefyi` service user. `scripts/refresh-disposable-domains.sh` now `chmod 644`s the destination and `chown`s it back to `latefyi:latefyi` when invoked as root. The next quarterly cron is self-healing; the current snapshot was repaired manually.
+
+### Tests
+
+271/271 pass (was 264). New: 7 pickup-mode confirmation tests (subject verb, no-arrow, no-question-mark, scheduled-arrival-only line, no dep platform, T-30 anchored on arrival) + 1 explicit boarding-mode regression guard.
+
+---
+
 ## 0.14.3 / PRD 1.14.3 — Self-contained push body openers (2026-05-04)
 
 ### Changed
