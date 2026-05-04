@@ -1,6 +1,6 @@
 # latefyi — Product Requirements Document
 
-**Version:** 1.14.5
+**Version:** 1.14.6
 **Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone (`ALLOWED_SENDERS=`). Privacy contract is literal: trip ends → address AND record both deleted, no archive. Disambiguation completion (numbered/named replies) wired end-to-end with `Reply-To` threading. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. **Routable From:** per-template (`<TRAINNUM>@`, `stop@`, `config@`, `help@`, `list@`) with display name `latefyi`. **Subject inbox-grouping signals** — `[trip]` prefix + day+date suffix always present in confirmation and per-event subjects. **`list@late.fyi`** — email any time to get a listing of all active trains. **STOP ALL / STOP TRIP** list cleared trains with dates. **Notification reliability hardened (1.14.0):** systemd is the single daemon authority (flock'd, `wake.sh` no longer spawns); failed sends are logged, retried up to 10× over ~5 min via on-record `pendingDeliveries`, and surface to `OPERATOR_EMAIL` on give-up; `logs/delivery-errors.log` mirrors every attempt. **Station-local time everywhere (1.14.0)**: HAFAS offsets are honoured per-station — `dep Monday, 2026-05-04 11:10 Amsterdam Centraal` reads as Amsterdam time by construction, no UTC label needed. **Rich change pushes (1.14.0)**: every event body opens with `<line>, <from> → <to>` and uses `> ` row markers + inline `(+Nmin)`/`(was X)` annotations. **Operator metrics**: daily snapshot (`scripts/stats.sh`) + weekly digest email (`scripts/stats-email.sh`). **Repo-tracked systemd units** (`systemd/`, `scripts/install-units.sh`) and **`scripts/vps.sh`** for one-shot VPS access. **Email format catalogue:** `docs/02-features/email-formats.md` (regenerated via `scripts/dump-email-samples.js`). **Disposable-inbox blocklist (1.14.1):** opt-in `BLOCK_DISPOSABLE=true`; snapshot at `config/disposable-domains.txt` (5437 domains), refresh with `scripts/refresh-disposable-domains.sh`. **Quarterly refresh cron (1.14.2):** root crontab runs `scripts/cron-refresh-disposable.sh` at 06:00 UTC on Jan 1 / Apr 1 / Jul 1 / Oct 1; auto-restarts `latefyi-ingest` if the snapshot changed and emails the operator with success/failure. **Mode A pickup confirmation (1.14.4):** confirmation reply branches on mode — pickup (To:-only) opens "Picking up X at Y", subject is "Pickup X — Y", and the irrelevant origin / departure-platform fields are dropped; boarding unchanged. The same release fixes the post-refresh EACCES that crashed `latefyi-ingest` after the first quarterly run (refresh script now writes 0644 + chowns to the service user when invoked by root). **Mode A push events (1.14.5):** `src/diff.js` `richBody` and per-event headlines are now mode-aware — T-30, platform_assigned, delay_change, terminating_short, and arrived all collapse to the pickup shape (no origin, no dep platform, no "? →" placeholder). Push subject date suffix anchors on arrival for Mode A so it matches the confirmation. `deploy.sh` now soaks 3 s post-restart and tails recent journalctl lines so a fast crash doesn't slip past the immediate `is-active` check. 281/281 tests pass.
 
 **Deferred in v1.9.0 — ntfy push notifications.** The full code path (per-user derived topic, opt-in QR/deep-link reply, push transport, fail-streak counter) is intact, but no longer surfaced in user-facing copy. Real-world testing showed that even with the designed onboarding (`CHANNELS ntfy` → reply with `ntfy://subscribe/<topic>` deep link + `https://ntfy.sh/<topic>` fallback), the deep link is dead on a fresh device (no ntfy app registered for the scheme) and the HTTPS fallback drops users into a no-push browser tab. "No extra setup, ever" is not honest until we either (a) ship a hosted PWA that owns the scheme + handles web push, or (b) replace ntfy with first-party web push. Until then: `config@late.fyi` accepts `CHANNELS ntfy` but replies "ntfy delivery is paused" and pins the user to email; confirmation/missing-context bodies omit any ntfy/CHANNELS mention.
@@ -598,12 +598,15 @@ That's the entire endpoint table. No per-country routing, no operator-prefix gue
 3. If still no match: reply with §7's "train not found" template.
 4. Once matched, fetch full trip via `client.trip(tripId)` to get the stop sequence for §7a disambiguation and §9 polling.
 
-### Fallback during polling
+### Fallback during polling — sticky source, no mid-trip switching (Policy A)
 
-- If ÖBB returns null platform at T-15 for Mode B, query PKP and use whichever has data.
-- If ÖBB returns 5xx or times out three consecutive polls, switch to PKP for the remainder of the session.
-- Log endpoint disagreements (e.g., ÖBB says delay +5, PKP says delay +12 for the same train) to `disagreement.log` for later tuning.
-- **Never merge** — pick one source per poll, log the choice. Merging multi-source data invites bugs at 6am in Gare du Nord.
+Fallback fires **only at resolve time**. Once a trip's winning source is recorded in `state/active/<msgid>.json` (`record.resolved.endpoint`), it never changes for the lifetime of that trip.
+
+- On poll failure: retry the same source. After `MAX_CONSECUTIVE_FAILURES = 6` (`src/poll.js:109`), emit `tracking_lost`. The user can re-engage via a fresh email and may land on the other source on re-resolve.
+- No mid-trip switch to the alternate source. Rationale in the 2026-05-04 POC findings below.
+- No `disagreement.log`. Comparing sources mid-trip implies querying both each poll, which doubles request volume against free public endpoints. We do not shadow-query.
+
+Implementation: `src/poll-runner.js:95` reads `record.state?.endpointInUse || record.resolved?.endpoint || 'oebb'` per poll.
 
 ### Durability risk (NEW — must be acknowledged)
 
@@ -611,8 +614,36 @@ The system now has a **single-vendor data dependency on ÖBB's HAFAS endpoint**.
 
 Mitigation posture for v1:
 - Accept the risk; this is a personal-use tool, not a service we owe SLAs on.
-- `disagreement.log` doubles as an early-warning signal — sudden divergence may indicate one endpoint deteriorating.
 - §24 (future considerations) gains an item: "abstract `resolve.js` and `poll.js` behind a data-source interface so a non-HAFAS provider can be slotted in without touching the rest of the system."
+
+### POC findings (2026-05-04) — fallback policy locked, no third source
+
+A second POC re-examined (a) adding a third HAFAS source for redundancy and (b) mid-trip source switching. Three options considered for fallback policy: pre-capture all sources at resolve, race in parallel each poll, or sticky-with-resolve-time-fallback. The third won.
+
+**No viable third source.** `hafas-client` v6 ships 38 profiles; SBB is not among them. SBB's stable open API is `transport.opendata.ch`, a different protocol — wiring it would require a non-HAFAS adapter for marginal coverage gain, since ÖBB already proxies Swiss long-distance trains. The remaining hafas-client profiles (`db`, `sncb`, `cfl`, etc.) are dead per the 2026-04-28 POC or sub-regional. **Decision: stay at two sources (oebb, pkp).** Revisit only if both deteriorate simultaneously.
+
+**Mid-trip source switching is unsafe.** Live comparison on `RJ 854` (Wien Hbf → Villach Hbf) at the same moment, both sources resolving the same train independently:
+
+| Field | ÖBB | PKP |
+|---|---|---|
+| Departure delay | 120s | null |
+| `line.product` | `nationalExpress` | `high-speed-train` |
+| Stop name (sample) | `Flughafen Wien Bahnhof` | `Flughafen Wien` |
+| Cold-resolve latency | 4976ms | 716ms |
+
+PKP's realtime feed for Austrian trains is sparser than ÖBB's. If a trip running on ÖBB switched to PKP mid-trip, the next diff would see "delay cleared, stop name changed, product changed" and emit a false-positive push — indistinguishable to the user from real news. Resolve-time fallback is safe (no diff baseline yet). Mid-trip fallback is not. **`tracking_lost` after 6 consecutive failures is the correct exit; it is a clean signal, not a degraded one.**
+
+**Pre-capturing both sources' tripIds at resolve time: rejected.** TripIds are per-day and per-profile (ÖBB encodes the date as `DA#40526`; PKP's appears as a trailing `4052026` segment). Caching the fallback tripId saves ~700ms on the rare fallback, but the cache can go stale if the operator regenerates schedules between resolve-time and fallback-time — exactly when fallback is needed. The minimal alternative (re-resolve from `{trainNum, anchorStation, departureDate}` on the next source) avoids the stale-cache class of bug for negligible cost in already-degraded mode. Also fights the privacy invariant: extra cached tripIds are dead weight in 99% of `state/active/` records.
+
+### Bus tracking — explicitly out of scope
+
+Considered and rejected as a product extension:
+
+- **FlixBus / BlaBlaCar Bus** — dominant European intercity coach networks; neither exposes a public realtime API. Ride identifiers are internal booking IDs, not user-memorable numbers — no analogue to "email the train number" exists.
+- **Urban / regional buses** — fragmented per-city via GTFS-RT. Aggregators (Transitous, Navitia, EU NAP portals per Regulation 2017/1926) exist with patchy realtime coverage. The identifier problem is worse: a city bus is "line 47, departing Place X at 09:42," not a number.
+- **HAFAS bus legs** — ÖBB and PKP surface some regional bus services as multimodal results. Not excluded from query, not a deliberate target.
+
+The product premise — *user emails a number, we track it* — does not map to bus operations. Buses remain out of scope unless a different identifier mechanic emerges.
 
 ---
 
@@ -1549,6 +1580,92 @@ Items not in v1.0 but worth revisiting if felt pain emerges:
 - **Webhook notification**: sibling to ntfy/email, for advanced users wanting to wire latefyi into Home Assistant or similar. Only if requested.
 - **iCal feed**: read-only iCal of currently-tracked trains, for calendar overlays. Only if requested.
 - **Operator-specific quirks**: e.g., SNCF announces some intercity platforms via separate API; could add operator adapter layer if HAFAS proves insufficient.
+
+### Geographic expansion beyond EU (parked, 2026-05-04 survey)
+
+Scope filter for any future region: **regional and long-distance trains only** — explicitly excludes urban metro, tram, S-Bahn-class commuter services where the user-facing identifier is a line code (e.g., "U6") rather than a numbered service. The product premise — *email a train number, we track it* — only maps to numbered scheduled services.
+
+**Sequencing principle.** Stay EU-only until coverage there is demonstrably solid (no felt gaps, ÖBB+PKP not failing in user-visible ways). Only then consider expansion. EU is also the only region currently served by a *protocol-uniform* source set (HAFAS); every other region requires a non-HAFAS adapter.
+
+Survey of regions that pass the open-API + numbered-service filter:
+
+| Region | Source | Status | Notes |
+|---|---|---|---|
+| Switzerland | `transport.opendata.ch` | 🟢 stable, free, no key | REST (not HAFAS); covers IR/IC/RE long-distance + S-Bahn. Highest-ROI single addition if Swiss-specific gaps surface. |
+| Norway | Entur (`api.entur.io`) | 🟢 stable, free, NeTEx/SIRI | NSB intercity + regional + local. Excellent quality. |
+| Sweden | Trafiklab | 🟢 free with key | SJ long-distance + regional. GTFS-RT + REST. |
+| Finland | Digitransit | 🟢 free, MIT-licensed stack | VR network is small. Self-hostable. |
+| Taiwan | PTX (`tdx.transportdata.tw`) | 🟢 free with registration | TRA (full network) + THSRC (HSR). Train-numbered, realtime delays. |
+| UK | National Rail Open Data (Darwin/HSP) | 🟡 free with registration | Strong realtime, but UK identifier UX is awkward — riders think in headcodes/destinations, not continental-style train numbers. |
+| Japan (Tokyo) | ODPT | 🟡 free, registration, non-commercial | Tokyo metro area only — JR East suburban, Tokyo Metro, Toei. **Shinkansen and JR mainline not covered.** |
+| Korea | data.go.kr (KORAIL) | 🟡 registration often gated to Korean residents | Practically inaccessible for foreign developers. |
+| US | per-operator (MBTA, Caltrain, LIRR, Metra…) | 🟡 federated GTFS-RT | No national Amtrak open API. Per-agency integration only. |
+| China | none | 🔴 closed | 12306.cn no public API. Scrapers fragile and adversarial. |
+| India | none stable | 🔴 third-party APIs come and go | IRCTC closed. Don't rely on `RailwayAPI`-class services. |
+| Russia, most of LATAM, most of SE Asia | none | 🔴 closed | — |
+
+Priority order *if* expansion is ever pursued: **Switzerland → Norway/Sweden → Taiwan**. The first three are clean drop-ins; Taiwan validates the non-EU pattern at low cost.
+
+### Multi-adapter architecture (parked — required before any non-HAFAS source)
+
+Every non-HAFAS source forces a real abstraction. Today `resolve.js` and `poll.js` are HAFAS-shaped (tripId, `client.trip()`, station boards via `departures()`). A single adapter interface is the prerequisite for any geographic expansion:
+
+```
+interface DataSource {
+  id: string                          // 'oebb', 'sbb-ch', 'entur-no'
+  resolve(parsed) -> ResolvedTrip|null
+  poll(tripRef) -> Snapshot
+}
+```
+
+Each adapter encapsulates its own protocol; the orchestrator iterates sources in priority order. The current ÖBB→PKP pattern in `resolve.js` is a degenerate case of this orchestrator.
+
+Routing strategies considered:
+
+- **A. Probe all adapters in priority order.** Simple, current ÖBB→PKP pattern scaled. Breaks down past ~3 sources — every miss multiplies request volume against free public endpoints. Impolite at scale.
+- **B. User-typed region prefix in the local-part.** Cheapest routing logic, near-zero ambiguity, pushes a small one-time UX tax onto non-EU users only.
+- **C. Country inference from `From:`/`To:` stations.** Maintain a station-name→country index; route to that region's adapters. Best UX, but the index is a maintenance surface (renames, new stations).
+- **D. Probe EU first, disambiguation reply on miss.** Pragmatic stepping stone — extends §7a flow to ask *"did you mean a Japanese train? Try `jp...@late.fyi`"*. Adds discoverability without changing the EU default UX.
+
+**Chosen scheme (parked, agreed in principle 2026-05-04): B + D.** Explicit region prefix for non-EU, with a discoverability hint when a prefix-less email doesn't resolve.
+
+#### Local-part syntax
+
+```
+EU (default):  <trainnum>@late.fyi             e.g. rj854@late.fyi, tgv6207@late.fyi, ic2021@late.fyi
+Non-EU:        <cc><trainnum>@late.fyi         e.g. chic5@late.fyi, nor9602@late.fyi, jphikari503@late.fyi
+               <cc>-<trainnum>@late.fyi        optional dash form, accepted but not advertised
+```
+
+Region codes are ISO 3166 alpha-2. The *advertised namespace* is `{ch, no, se, fi, gb, jp, tw}` — codes for which a viable open API was identified in the regional survey above. Adding a new code is gated on identifying a viable adapter for that region; the namespace is not pre-reserved (e.g., `es` for Spain is not available because Renfe has no stable open API as of 2026-05-04).
+
+`eu` is **never required and not advertised**. If a user types it anyway (`eutgv345@late.fyi`), the parser silently strips it and routes to the EU default — be liberal in what you accept.
+
+#### Parser rule (precise)
+
+> Lowercase the local-part. If it starts with one of the advertised region codes *and* the remainder validates as a train identifier against that region's adapter, route there. Otherwise route to the EU default. The optional `-` separator (`<cc>-<trainnum>`) is stripped before matching.
+
+The "validates against the region adapter" check is the safety net: if a future EU service class collides with a region code (none today — verified against `RJ, RJX, IC, EC, EN, NJ, EUR, ICE, TGV, TER, S, RE, IR, RB`), the wrong path fails resolve and falls through to EU. Cost: one extra resolve attempt on collision. Worth it.
+
+#### Discoverability — the (D) part of B+D
+
+When a prefix-less email fails EU resolve and the train identifier *could plausibly* belong to a non-EU region, the §7 "train not found" reply gains a hint line:
+
+> *"Couldn't find `<trainnum>` in EU rail. If this is a non-EU train, prefix the region code (e.g. `ch<trainnum>@late.fyi` for Switzerland). Region codes: ch, no, se, fi, gb, jp, tw."*
+
+This ships **with the same PR that adds adapter #2**. Until then it would advertise capabilities that don't exist.
+
+#### Implementation gating
+
+This section is forward-looking design only. **Nothing changes in `resolve.js`, `parse.js`, or `worker/index.js` until adapter #2 has a concrete reason to exist** (felt user pain, repeated requests for a specific region). When that moment arrives, the work order is:
+
+1. Refactor `resolve.js`/`poll.js` to take `DataSource[]` instead of `primaryClient`/`fallbackClient`. Existing ÖBB and PKP become the first two adapters under a single `eu` region.
+2. Add the second region's adapter (real, not stub).
+3. Add the prefix parsing rule to `parse.js` / `worker/index.js`.
+4. Add the discoverability hint to §7's "train not found" template.
+5. Update `web/index.html` with a region table.
+
+Skipping straight to step 2 without step 1 is the trap — it's how you end up with `if (region === 'ch') ...` branches in `resolve.js`.
 
 These are listed for completeness only. Do not implement unless explicit pain demonstrated. Re-litigation after the fact is a known failure mode.
 

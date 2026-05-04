@@ -10,6 +10,16 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Docs (PRD 1.14.6)
+
+Design lock + regional survey, no code changes. Captures decisions reached via a second-pass POC (untracked diagnostics in `scripts/poc-*.js`, not shipped):
+
+- **§8 — Fallback policy locked (Policy A).** Rewrote stale "Fallback during polling" subsection that described mid-trip switching + `disagreement.log`; the shipped code in `src/poll-runner.js:95` and `src/poll.js:109` has always done sticky-source-with-tracking-lost. PRD now matches reality.
+- **§8 — POC findings (2026-05-04) added.** SBB rejected as third source (no `hafas-client` profile; would require a non-HAFAS adapter for marginal gain since ÖBB already proxies CH long-distance). Mid-trip source switching rejected on data-quality asymmetry — live comparison on `RJ 854` showed ÖBB reporting 120s delay while PKP reported null on the same train, plus `nationalExpress` vs `high-speed-train` product taxonomy and stop-name divergence (`Flughafen Wien Bahnhof` vs `Flughafen Wien`); switching mid-trip would emit false-positive "delay cleared" pushes. Pre-capturing both sources' tripIds at resolve rejected on stale-cache risk (tripIds are per-day per-profile).
+- **§8 — Bus tracking out of scope.** FlixBus / BlaBlaCar Bus (no public realtime API, internal booking IDs not user-memorable) and urban GTFS-RT (fragmented, identifier mismatch with the "email a number" UX). Buses do not map to the product premise unless a different identifier mechanic emerges.
+- **§24 — Geographic expansion survey (parked).** Ranked open-API regions for any future non-EU expansion: 🟢 Switzerland (`transport.opendata.ch`), Norway (Entur), Sweden (Trafiklab), Finland (Digitransit), Taiwan (PTX); 🟡 UK (Darwin/HSP, identifier UX awkward), Japan (ODPT, Tokyo metro only), Korea (gated to residents), US (per-operator only); 🔴 China, India, Russia, most of LATAM (closed). Scope filter: regional/long-distance only — no urban metro/tram. Stay EU-only until coverage gaps are felt.
+- **§24 — Multi-adapter routing scheme agreed in principle (B + D).** Local-part syntax: `<trainnum>@late.fyi` for EU (default, unchanged), `<cc><trainnum>@late.fyi` for non-EU using ISO 3166 alpha-2 (`ch, no, se, fi, gb, jp, tw`). Optional dash form accepted but not advertised. `eu` silently stripped if typed. Discoverability hint added to §7 "train not found" reply when adapter #2 ships. **Implementation gated on adapter #2 having a concrete reason to exist.**
+
 ## 0.14.6 — Declarative discoverability + privacy-SEO playbook (2026-05-04)
 
 ### Added
