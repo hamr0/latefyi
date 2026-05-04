@@ -22,7 +22,7 @@ import {
 import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
-  unauthorizedSenderReply, stopReply, ntfyOptInReply, genericErrorReply,
+  unauthorizedSenderReply, disposableSenderReply, stopReply, ntfyOptInReply, genericErrorReply,
   rateLimitedReply, tooManyActiveReply, listReply, FOOTER,
 } from './reply.js';
 
@@ -37,6 +37,15 @@ function newMsgid() {
 function isAllowlisted(sender, allowlist) {
   if (!allowlist || allowlist.length === 0) return true; // no allowlist = open (single-tenant default)
   return allowlist.includes(sender.toLowerCase());
+}
+
+// Disposable inbox check. `disposableDomains` is a Set<string> (lowercase
+// domain names). Empty / null Set = no check.
+function isDisposable(sender, disposableDomains) {
+  if (!disposableDomains || disposableDomains.size === 0) return false;
+  const at = sender.lastIndexOf('@');
+  if (at < 0) return false;
+  return disposableDomains.has(sender.slice(at + 1).toLowerCase());
 }
 
 // Scan active/+pending/ records and filter by predicate. Used for STOP scopes.
@@ -282,10 +291,15 @@ function handleConfig({ email, parsed, stateDir }) {
 //   aliases?        from config/aliases.json
 //   allowlist?      string[] of allowed lowercase senders; null = open
 //
-export async function handleInbound({ email, stateDir, primaryClient, fallbackClient, aliases = {}, allowlist = null, limits = DEFAULT_LIMITS, now = Date.now() }) {
+export async function handleInbound({ email, stateDir, primaryClient, fallbackClient, aliases = {}, allowlist = null, disposableDomains = null, limits = DEFAULT_LIMITS, now = Date.now() }) {
   // Allowlist: silent drop (no backscatter to spoofed senders, per §13.9).
   if (!isAllowlisted((email.from || '').toLowerCase(), allowlist)) {
     return null;
+  }
+  // Disposable inbox: friendly bounce (the sender authored the email
+  // themselves — unlike the allowlist case, there's no spoofing concern).
+  if (isDisposable((email.from || '').toLowerCase(), disposableDomains)) {
+    return disposableSenderReply({ sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid() });
   }
 
   const parsed = parse(email);

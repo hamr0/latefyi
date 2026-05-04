@@ -267,6 +267,23 @@ export function tooManyActiveReply({ count, max, sender, incomingMsgid, ourMsgid
 
 // ---- §7: unauthorized sender (system-internal note; rarely sent) ----
 
+// Disposable inbox: send a reply (unlike allowlist which silently drops to
+// avoid backscatter to spoofed senders). The disposable sender authored
+// this email themselves, so a friendly bounce is appropriate.
+export function disposableSenderReply({ sender, incomingMsgid, ourMsgid }) {
+  return reply({
+    fromLocal: 'help',
+    subject: `Disposable address — please use a stable email`,
+    to: sender,
+    inReplyTo: incomingMsgid,
+    msgid: ourMsgid,
+    body:
+      `Email from ${sender} looks like a disposable / temporary address.\n` +
+      `late.fyi sends tracking updates to your inbox over hours, sometimes days — those would land somewhere you can't reliably read.\n\n` +
+      `Resend from a stable email address.`,
+  });
+}
+
 export function unauthorizedSenderReply({ sender, incomingMsgid, ourMsgid }) {
   return reply({
     fromLocal: 'help',

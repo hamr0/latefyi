@@ -10,6 +10,19 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.1 / PRD 1.14.1 — Disposable-inbox blocklist (2026-05-04)
+
+### Added
+
+- **Disposable-inbox blocklist**, opt-in via `BLOCK_DISPOSABLE=true` in `/etc/latefyi.env`. Vendored snapshot at `config/disposable-domains.txt` (5437 domains, sourced from [disposable-email-domains/disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains)). Senders on a blocked domain receive a friendly bounce (`disposableSenderReply`) — unlike the silent allowlist drop, which exists to avoid backscatter to spoofed senders. The disposable sender authored their own email; an explicit reply is appropriate.
+- **`scripts/refresh-disposable-domains.sh`** — manually refresh the snapshot from upstream. Refuses to overwrite if the fetched file looks broken (<1000 lines). Run quarterly + commit the diff. Intentionally NOT fetched at runtime so a remote list change can't silently expand the block surface.
+
+### Why
+
+Per-sender abuse limits (10/hr, 50/day, 20 active) defend the small VPS from runaway resource use, but they're keyed on the sender's email. A script using a fresh disposable inbox per request defeats them trivially. Beyond abuse, disposable inboxes are typically public — sending tracking notifications there leaks the user's trip details into a world-readable inbox they'll never read meaningfully.
+
+264/264 tests pass.
+
 ## 0.14.0 / PRD 1.14.0 — Notification reliability + station-local time (2026-05-04)
 
 Two real-world incidents drove this release:

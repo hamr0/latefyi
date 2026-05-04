@@ -111,6 +111,9 @@ show('too many active trips',
 show('unauthorized sender (only when allowlist non-empty)',
   R.unauthorizedSenderReply({ sender, incomingMsgid }));
 
+show('disposable inbox (only when BLOCK_DISPOSABLE=true)',
+  R.disposableSenderReply({ sender: 'throwaway@mailinator.com', incomingMsgid }));
+
 show('STOP confirmation (single train)',
   R.stopReply({
     scope: 'single', target: 'EUR9340',

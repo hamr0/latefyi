@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   FOOTER, confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
-  unauthorizedSenderReply, stopReply, ntfyOptInReply, pushReply,
+  unauthorizedSenderReply, disposableSenderReply, stopReply, ntfyOptInReply, pushReply,
   genericErrorReply,
 } from '../src/reply.js';
 
@@ -263,6 +263,14 @@ test('unauthorizedSenderReply names the sender + points at the operator', () => 
   const r = unauthorizedSenderReply({ sender: 'stranger@x.com' });
   assert.match(r.body, /stranger@x\.com/);
   assert.match(r.body, /feedback@late\.fyi/);
+});
+
+test('disposableSenderReply names the sender + suggests resending from a stable address', () => {
+  const r = disposableSenderReply({ sender: 'throwaway@mailinator.com' });
+  assert.match(r.body, /throwaway@mailinator\.com/);
+  assert.match(r.body, /stable email/i);
+  assert.match(r.from, /help@late\.fyi/);
+  assert.match(r.subject, /Disposable address/i);
 });
 
 // ===== listReply =====

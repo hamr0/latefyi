@@ -33,6 +33,7 @@ Routing key is the **local-part of the To: address**. Body and subject are parse
 | `feedback@late.fyi`         | Any subject/body                                     | Forwarded to operator; no auto-reply |
 | Reply to a prior outbound   | `In-Reply-To` header set                             | `reply` — answer disambiguation, etc. |
 | `noreply@`, `postmaster@`, `abuse@`, `admin@` | Reserved local-parts caught by Cloudflare worker | Dropped before ingest |
+| Any local-part, sender on a known disposable domain (mailinator, 10minutemail, …) | Only when `BLOCK_DISPOSABLE=true` | `disposableSenderReply` — friendly bounce, no record created |
 
 ### Headers recognised in the subject (or first non-empty body line)
 
@@ -207,6 +208,20 @@ Already-tracked trains keep updating — this only blocks new ones.
 You're already tracking 20 trains, which is the per-sender limit (20).
 
 Reply STOP <TRAINNUM> on any of them, or STOP ALL to clear everything, then resend this request.
+```
+
+### disposable inbox
+
+**Trigger:** sender's domain is in `config/disposable-domains.txt` (snapshot of [disposable-email-domains/disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains), refreshed via `scripts/refresh-disposable-domains.sh`). **Opt-in**: only fires when `BLOCK_DISPOSABLE=true` in `/etc/latefyi.env`. Unlike the allowlist drop (silent, to avoid backscatter to spoofed senders), disposable inboxes get a friendly bounce — the disposable sender authored their own email, so an explicit reply is appropriate.
+
+**From:** `latefyi <help@late.fyi>`
+**Subject:** `Disposable address — please use a stable email`
+
+```
+Email from throwaway@mailinator.com looks like a disposable / temporary address.
+late.fyi sends tracking updates to your inbox over hours, sometimes days — those would land somewhere you can't reliably read.
+
+Resend from a stable email address.
 ```
 
 ### unauthorized sender

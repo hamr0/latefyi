@@ -19,6 +19,7 @@ export function createIngestServer({
   fallbackClient,
   aliases = {},
   allowlist = null,
+  disposableDomains = null,
   transport = null,
   ingestToken,
   limits,
@@ -69,7 +70,7 @@ export function createIngestServer({
       }
 
       const reply = await handleInbound({
-        email, stateDir, primaryClient, fallbackClient, aliases, allowlist, limits,
+        email, stateDir, primaryClient, fallbackClient, aliases, allowlist, disposableDomains, limits,
       });
 
       let sent = false, sendError = null;
@@ -118,6 +119,26 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const allowlistEnv = (process.env.ALLOWED_SENDERS || '').trim();
   const allowlist = allowlistEnv ? allowlistEnv.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : null;
 
+  // Disposable-inbox blocklist (opt-in via BLOCK_DISPOSABLE=true). The list
+  // is a vendored snapshot; refresh manually with
+  // scripts/refresh-disposable-domains.sh and re-deploy. We don't fetch at
+  // runtime so a remote list change can't silently expand the block surface.
+  let disposableDomains = null;
+  if ((process.env.BLOCK_DISPOSABLE || '').toLowerCase() === 'true') {
+    const dPath = join(root, 'config', 'disposable-domains.txt');
+    if (existsSync(dPath)) {
+      disposableDomains = new Set(
+        readFileSync(dPath, 'utf8')
+          .split('\n')
+          .map(l => l.trim().toLowerCase())
+          .filter(l => l && !l.startsWith('#'))
+      );
+      console.log(`[ingest] disposable-inbox block: ${disposableDomains.size} domains loaded`);
+    } else {
+      console.warn(`[ingest] BLOCK_DISPOSABLE=true but ${dPath} missing — block is INACTIVE`);
+    }
+  }
+
   // Aliases
   let aliases = {};
   const aliasPath = join(root, 'config', 'aliases.json');
@@ -160,7 +181,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   const server = createIngestServer({
     stateDir, primaryClient: profiles.oebb, fallbackClient: profiles.pkp,
-    aliases, allowlist, transport, ingestToken, limits,
+    aliases, allowlist, disposableDomains, transport, ingestToken, limits,
   });
   server.listen(port, host, () => console.log(`[ingest] listening on ${host}:${port}`));
 }

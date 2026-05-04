@@ -91,6 +91,41 @@ test('allowlist: empty/null = open (single-tenant default)', async () => {
   assert.match(r.from, /^latefyi <[a-z0-9]+@late\.fyi>$/i);
 });
 
+test('disposable: blocked domain → friendly bounce (not silent)', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({ from: 'throwaway@mailinator.com', subject: 'From: A, To: B' }),
+    stateDir, primaryClient: fakeOebb(),
+    disposableDomains: new Set(['mailinator.com']),
+  });
+  assert.ok(r, 'disposable inbox should get a reply, not a silent drop');
+  assert.equal(r.to, 'throwaway@mailinator.com');
+  assert.match(r.subject, /Disposable address/i);
+  assert.match(r.body, /throwaway@mailinator\.com/);
+});
+
+test('disposable: domain not in set → passes through normally', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({ subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+    disposableDomains: new Set(['mailinator.com']),  // doesn't match baseEmail's from
+  });
+  assert.ok(r);
+  assert.doesNotMatch(r.subject, /Disposable address/i);
+});
+
+test('disposable: empty Set / null → check skipped', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({ from: 'throwaway@mailinator.com', subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+    disposableDomains: null,
+  });
+  assert.ok(r);
+  assert.doesNotMatch(r.subject, /Disposable address/i);
+});
+
 // ===== Track happy path =====
 
 test('track happy path: resolves, schedules, returns confirmation', async () => {
