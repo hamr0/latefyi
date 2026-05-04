@@ -20,32 +20,49 @@
 // PushEvent shape:
 //   { type, priority: 'urgent'|'high'|'default', title, body, tags? }
 
+import { fmtTime, fmtDatetime } from './time-fmt.js';
+
 const DEFAULT_OPTS = {
   delayPreAnchorMin: 2,
   delayInTransitMin: 5,
 };
 
-import { fmtTime, fmtDatetime } from './time-fmt.js';
-
 function plat(p) { return p ?? '–'; }
 function delay(d) { return `+${d ?? 0}min`; }
 
-// T-30 push: same shape as the original confirmation reply (full,
-// station-local times with date + day-name, station names beside times,
-// platform/status block) so the user gets a coherent re-anchor instead
-// of a sparse "departed at 09:10" UTC blurb. This is the only push that
-// repeats the schedule context — subsequent pushes (departed/arrived/
-// delay/platform-change) are deltas and stay terse.
-function startedBody(curr) {
+// Unified rich body — same shape as the original confirmation reply.
+// `marks` is a Set of row keys that changed since last snapshot:
+//   'time'    — schedule row (delays / time edits)
+//   'depPlat' — departure platform
+//   'arrPlat' — arrival platform
+// Each marked row gets a leading "> " so the user can spot what's new
+// without scanning the whole block. Inline annotations on the changed
+// field add the delta (e.g. " (+5min)" on a delayed time, " (was 15a)"
+// on a re-platformed train).
+function richBody(curr, prev, marks = new Set()) {
   const line = curr.line || curr.trainNum;
   const fromName = curr.fromName ?? '?';
   const toName = curr.toName ?? '?';
+
+  const depDelay = curr.departureDelayMin ?? 0;
+  const arrDelay = curr.arrivalDelayMin ?? 0;
+  const depDelayTag = depDelay ? ` (+${depDelay}min)` : '';
+  const arrDelayTag = arrDelay ? ` (+${arrDelay}min)` : '';
+
+  const depPlatStr = curr.departurePlatform || 'TBC';
+  const arrPlatStr = curr.arrivalPlatform   || 'TBC';
+  const depPlatWas = (prev && prev.departurePlatform && prev.departurePlatform !== curr.departurePlatform)
+    ? ` (was ${prev.departurePlatform})` : '';
+  const arrPlatWas = (prev && prev.arrivalPlatform && prev.arrivalPlatform !== curr.arrivalPlatform)
+    ? ` (was ${prev.arrivalPlatform})` : '';
+
+  const mark = (key) => marks.has(key) ? '> ' : '';
+
   const lines = [
     `${line}, ${fromName} → ${toName}.`,
-    `Scheduled: dep ${fmtDatetime(curr.scheduledDeparture)} ${fromName}, arr ${fmtDatetime(curr.scheduledArrival)} ${toName}.`,
-    `Departure platform: ${curr.departurePlatform || 'TBC'}    Arrival platform: ${curr.arrivalPlatform || 'TBC'}`,
+    `${mark('time')}Scheduled: dep ${fmtDatetime(curr.scheduledDeparture)} ${fromName}${depDelayTag}, arr ${fmtDatetime(curr.scheduledArrival)} ${toName}${arrDelayTag}.`,
+    `${mark('depPlat')}Departure platform: ${depPlatStr}${depPlatWas}    ${mark('arrPlat')}Arrival platform: ${arrPlatStr}${arrPlatWas}`,
   ];
-  if (curr.departureDelayMin) lines.push(`Currently +${curr.departureDelayMin}min`);
   return lines.join('\n');
 }
 
@@ -59,7 +76,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'tracking_started',
       priority: 'default',
       title: `Tracking ${curr.line || curr.trainNum}`,
-      body: startedBody(curr),
+      body: richBody(curr, null),
     });
     return events;
   }
@@ -87,21 +104,21 @@ export function diff(prev, curr, opts = {}) {
   const anchorIsArr = curr.mode === 'A';
   const prevAnchorPlat = anchorIsArr ? prev.arrivalPlatform : prev.departurePlatform;
   const currAnchorPlat = anchorIsArr ? curr.arrivalPlatform : curr.departurePlatform;
-  const anchorStation = anchorIsArr ? curr.toName : curr.fromName;
+  const anchorPlatMark = anchorIsArr ? 'arrPlat' : 'depPlat';
 
   if (!prevAnchorPlat && currAnchorPlat) {
     events.push({
       type: 'platform_assigned',
       priority: 'urgent',
       title: `${curr.line || curr.trainNum} → Platform ${currAnchorPlat}`,
-      body: `${anchorIsArr ? 'Arrival' : 'Departure'} platform ${currAnchorPlat} at ${anchorStation ?? '?'}.`,
+      body: richBody(curr, prev, new Set([anchorPlatMark])),
     });
   } else if (prevAnchorPlat && currAnchorPlat && prevAnchorPlat !== currAnchorPlat) {
     events.push({
       type: 'platform_changed',
       priority: 'urgent',
       title: `${curr.line || curr.trainNum} platform CHANGED → ${currAnchorPlat}`,
-      body: `Was ${prevAnchorPlat}, now ${currAnchorPlat} at ${anchorStation ?? '?'}.`,
+      body: richBody(curr, prev, new Set([anchorPlatMark])),
     });
   }
 
@@ -115,7 +132,7 @@ export function diff(prev, curr, opts = {}) {
       type: 'delay_change',
       priority: 'high',
       title: `${curr.line || curr.trainNum} ${delay(currAnchorDelay)}`,
-      body: `${anchorIsArr ? 'Arrival' : 'Departure'} delay at ${anchorStation ?? '?'}: was ${delay(prevAnchorDelay)}, now ${delay(currAnchorDelay)}.`,
+      body: richBody(curr, prev, new Set(['time'])),
     });
   }
 
@@ -126,14 +143,14 @@ export function diff(prev, curr, opts = {}) {
         type: 'arrival_platform_assigned',
         priority: 'urgent',
         title: `${curr.line || curr.trainNum} → arrival Platform ${curr.arrivalPlatform}`,
-        body: `Arrival platform ${curr.arrivalPlatform} at ${curr.toName ?? '?'}.`,
+        body: richBody(curr, prev, new Set(['arrPlat'])),
       });
     } else if (prev.arrivalPlatform && curr.arrivalPlatform && prev.arrivalPlatform !== curr.arrivalPlatform) {
       events.push({
         type: 'arrival_platform_changed',
         priority: 'urgent',
         title: `${curr.line || curr.trainNum} arrival platform CHANGED → ${curr.arrivalPlatform}`,
-        body: `Was ${prev.arrivalPlatform}, now ${curr.arrivalPlatform} at ${curr.toName ?? '?'}.`,
+        body: richBody(curr, prev, new Set(['arrPlat'])),
       });
     }
     const prevArrDelay = prev.arrivalDelayMin ?? 0;
@@ -143,7 +160,7 @@ export function diff(prev, curr, opts = {}) {
         type: 'arrival_delay_change',
         priority: 'high',
         title: `${curr.line || curr.trainNum} arrival ${delay(currArrDelay)}`,
-        body: `${curr.toName ?? '?'} arrival now ${delay(currArrDelay)} (was ${delay(prevArrDelay)}).`,
+        body: richBody(curr, prev, new Set(['time'])),
       });
     }
   }
