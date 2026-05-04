@@ -93,39 +93,47 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
   const toName = resolved.to || '?';
   const dep = resolved.schedule?.scheduledDeparture;
   const arr = resolved.schedule?.scheduledArrival;
-  // T-30 in the same timezone as the anchor (dep station's local clock for
-  // boarding mode, arr station's for pickup mode). Preserves the offset so
-  // fmtTime renders station-local instead of UTC.
-  const anchor = (resolved.mode === 'A' ? arr : dep);
+  const isPickup = resolved.mode === 'A';
+  // T-30 anchored at the relevant station: arrival for pickup (driver wants
+  // to time the airport-style approach), departure for boarding. Preserves
+  // the offset so fmtTime renders station-local instead of UTC.
+  const anchor = isPickup ? arr : dep;
   const t30 = anchor ? shiftIso(anchor, -30) : null;
 
   const tripLine = resolved.trip ? `\nTrip: ${resolved.trip}` : '';
   const updatesLine = `Updates by email starting T-30 at ${t30 ? fmtTime(t30) : '?'}.`;
   const stopBlock = stopLinks(trainNum, resolved.trip);
 
-  // Surface platform + status fields up front to set expectations: confirmation
-  // is the schedule; live data (operator-assigned platform, real-time delay)
-  // arrives at T-30 when polling kicks in. "TBC" = to be confirmed.
+  // Live data (operator-assigned platform, real-time delay) arrives at T-30
+  // when polling kicks in. "TBC" = to be confirmed.
   const depPlat = resolved.departurePlatform || 'TBC';
   const arrPlat = resolved.arrivalPlatform || 'TBC';
   const status  = resolved.status || 'TBC';
 
+  const verb = isPickup ? 'Pickup' : 'Tracking';
+  const route = isPickup ? toName : `${fromName} → ${toName}`;
+
   return reply({
     fromLocal: trainNum || 'help',
     subject: (() => {
-      const { prefix, suffix } = subjectTags({ trip: resolved.trip, scheduledIso: dep });
-      return `Tracking ${line}${prefix} — ${fromName} → ${toName}${suffix}`;
+      const { prefix, suffix } = subjectTags({ trip: resolved.trip, scheduledIso: anchor });
+      return `${verb} ${line}${prefix} — ${route}${suffix}`;
     })(),
     to: sender,
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
     replyTo: trainNum ? `${trainNum}@${DOMAIN}` : undefined,
-    body:
-      `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
-      `Scheduled: dep ${fmtDatetime(dep)} ${fromName}, arr ${fmtDatetime(arr)} ${toName}.\n` +
-      `Departure platform: ${depPlat}    Arrival platform: ${arrPlat}\n` +
-      `Status: ${status}\n` +
-      `${updatesLine}\n\n${stopBlock}`,
+    body: isPickup
+      ? `Picking up ${line} at ${toName}.${tripLine}\n` +
+        `Scheduled arrival: ${fmtDatetime(arr)}.\n` +
+        `Arrival platform: ${arrPlat}\n` +
+        `Status: ${status}\n` +
+        `${updatesLine}\n\n${stopBlock}`
+      : `Tracking ${line}, ${fromName} → ${toName}.${tripLine}\n` +
+        `Scheduled: dep ${fmtDatetime(dep)} ${fromName}, arr ${fmtDatetime(arr)} ${toName}.\n` +
+        `Departure platform: ${depPlat}    Arrival platform: ${arrPlat}\n` +
+        `Status: ${status}\n` +
+        `${updatesLine}\n\n${stopBlock}`,
   });
 }
 

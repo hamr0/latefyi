@@ -124,6 +124,64 @@ test('confirmation: subject combines trip prefix and date suffix', () => {
   assert.match(r.subject, /Tracking ICE 145 \[austria\] — Amsterdam Centraal → Berlin Ostbahnhof — Wednesday, 2026-04-29$/);
 });
 
+// ===== confirmation: pickup mode (To: only) =====
+
+const pickupResolved = (over = {}) => ({
+  trainNum: 'EUR9328', line: 'EUR 9328',
+  mode: 'A',
+  from: null, to: 'Paris Nord',
+  trip: null,
+  schedule: { scheduledDeparture: null, scheduledArrival: '2026-05-04T10:40:00Z' },
+  ...over,
+});
+
+test('pickup: subject uses Pickup verb and just the destination (no arrow)', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b', trainNum: 'EUR9328' });
+  assert.match(r.subject, /^Pickup EUR 9328 — Paris Nord — /);
+  assert.doesNotMatch(r.subject, /→/);
+  assert.doesNotMatch(r.subject, /\?/);
+});
+
+test('pickup: subject date suffix anchored on arrival (not departure)', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b', trainNum: 'EUR9328' });
+  assert.match(r.subject, /— Monday, 2026-05-04$/);
+});
+
+test('pickup: body opens "Picking up X at Y" with no origin question mark', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b', trainNum: 'EUR9328' });
+  assert.match(r.body, /^Picking up EUR 9328 at Paris Nord\./);
+  assert.doesNotMatch(r.body, /\? →/);
+});
+
+test('pickup: body shows scheduled arrival only — no dep line, no departure platform', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b', trainNum: 'EUR9328' });
+  assert.match(r.body, /Scheduled arrival: Monday, 2026-05-04 10:40/);
+  assert.doesNotMatch(r.body, /dep /);
+  assert.doesNotMatch(r.body, /Departure platform/);
+});
+
+test('pickup: arrival platform + status still surfaced', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b', trainNum: 'EUR9328' });
+  assert.match(r.body, /Arrival platform: TBC/);
+  assert.match(r.body, /Status: TBC/);
+});
+
+test('pickup: T-30 anchored on arrival (10:40 → 10:10)', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b', trainNum: 'EUR9328' });
+  assert.match(r.body, /Updates by email starting T-30 at 10:10/);
+});
+
+// ===== confirmation: boarding mode keeps existing wording =====
+
+test('boarding (mode B): body still opens "Tracking X, A → B."', () => {
+  const r = confirmationReply({
+    resolved: sampleResolved({ mode: 'B' }),
+    sender: 'a@b', trainNum: 'ICE145',
+  });
+  assert.match(r.body, /^Tracking ICE 145, Amsterdam Centraal → Berlin Ostbahnhof\./);
+  assert.match(r.body, /Departure platform: TBC/);
+});
+
 // ===== error templates =====
 
 test('missing context: surfaces all syntax options + example', () => {
