@@ -10,6 +10,21 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.2 / PRD 1.14.2 — Quarterly disposable-list refresh + email notification (2026-05-04)
+
+### Added
+
+- **`scripts/cron-refresh-disposable.sh`** — wraps `refresh-disposable-domains.sh` with operator notification. Runs the refresh, captures old/new line counts + sha256, and (when the snapshot changes and the refresh succeeded) `systemctl restart latefyi-ingest` so the new domains load without a redeploy. Always sends a status email via local postfix to the operator (`avoidaccess@gmail.com`), with subject `[late.fyi] disposable-domains refresh OK (M → N)` or `… FAILED (…)`. Exits 0 unconditionally — the email IS the failure signal, so cron's own MAILTO doesn't double-notify.
+- **Quarterly cron entry installed on the VPS (root crontab):**
+  ```
+  0 6 1 1,4,7,10 * /opt/latefyi/scripts/cron-refresh-disposable.sh
+  ```
+  Runs at 06:00 UTC on Jan 1, Apr 1, Jul 1, Oct 1.
+
+### Notes
+
+The cron writes the snapshot in-place inside `/opt/latefyi/config/disposable-domains.txt` (the same file checked into the repo). After it runs, the VPS's working tree drifts from `origin/main` until the operator mirrors the new snapshot back to git from their laptop. The drift is harmless (the file is append-mostly data); the email body includes the copy-paste sequence to upstream the change when convenient.
+
 ## 0.14.1 / PRD 1.14.1 — Disposable-inbox blocklist (2026-05-04)
 
 ### Added
