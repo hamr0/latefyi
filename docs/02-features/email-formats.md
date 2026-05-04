@@ -174,12 +174,12 @@ Reply with just the number (1 or 2), or the full name.
 **Trigger:** user requested a train whose anchor (departure or arrival) is in the past today.
 
 **From:** `latefyi <EUR9340@late.fyi>`
-**Subject:** `EUR 9340 already arrived`
+**Subject:** `EUR 9340 already arrived 2026-05-04`
 
 ```
-EUR 9340 arrived at Paris Nord at 14:42 today. Nothing left to track.
+EUR 9340 arrived at Paris Nord on Monday, 2026-05-04 14:42. Nothing left to track.
 
-If this is for tomorrow's EUR9340, resend after midnight (train numbers are per-day, not unique across days).
+If you meant a different day's EUR9340, resend with an explicit date (e.g. `On: 2026-05-05` for the next day's service). Train numbers are per-day, not unique across days.
 ```
 
 ### rate-limited

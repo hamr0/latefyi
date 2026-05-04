@@ -222,15 +222,20 @@ export function ambiguousStationReply({ trainNum, line, station, candidates, sen
 // ---- §18: train already passed ----
 
 export function alreadyArrivedReply({ trainNum, line, toStation, arrivedAt, sender, incomingMsgid, ourMsgid }) {
+  // Compute "tomorrow" relative to the arrival's local date so the suggestion
+  // is concrete (a date the user can copy into On:) rather than relative
+  // ("after midnight") which is ambiguous across timezones.
+  const tomorrow = arrivedAt ? shiftIso(arrivedAt, 24 * 60) : null;
+  const tomorrowDate = tomorrow ? fmtDate(tomorrow) : null;
   return reply({
     fromLocal: trainNum || 'help',
-    subject: `${line || trainNum} already arrived`,
+    subject: `${line || trainNum} already arrived ${fmtDate(arrivedAt)}`,
     to: sender,
     inReplyTo: incomingMsgid,
     msgid: ourMsgid,
     body:
-      `${line || trainNum} arrived at ${toStation} at ${fmtTime(arrivedAt)} today. Nothing left to track.\n\n` +
-      `If this is for tomorrow's ${trainNum}, resend after midnight (train numbers are per-day, not unique across days).`,
+      `${line || trainNum} arrived at ${toStation} on ${fmtDatetime(arrivedAt)}. Nothing left to track.\n\n` +
+      `If you meant a different day's ${trainNum}, resend with an explicit date${tomorrowDate ? ` (e.g. \`On: ${tomorrowDate}\` for the next day's service)` : ''}. Train numbers are per-day, not unique across days.`,
   });
 }
 
