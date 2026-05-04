@@ -10,6 +10,33 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.6 — Declarative discoverability + privacy-SEO playbook (2026-05-04)
+
+### Added
+
+Boring open-web bits that let people find late.fyi without adding any surveillance:
+
+- `web/index.html` — `<link rel="canonical">`, `<meta name="theme-color">`, OpenGraph tags (`og:type`, `og:title`, `og:description`, `og:url`, `og:site_name`), `twitter:card`. Tightened `<meta name="description">` to surface the privacy posture in the snippet ("…no accounts, no analytics, open source") so the audience self-selects in search results.
+- `web/robots.txt` — `User-agent: *` / `Allow: /` / `Sitemap:` line.
+- `web/sitemap.xml` — single-URL sitemap for the apex.
+
+All static head tags and static files. No scripts, no analytics, no third-party calls. Link unfurls in iMessage / Slack / Signal / Discord / Mastodon now render with title + description (and once an `og-card.png` is added, an image).
+
+### Docs
+
+- `docs/04-process/privacy-seo.md` — playbook for privacy-respecting discoverability. Covers the philosophy ("SEO" is two different things mashed together — declarative machine-readability is open-web, conversion-funnel growth-hacking is what conflicts), tier-1 head tags, tier-2 static files, what to never add (analytics, AMP, tag managers, cookie banners), distribution targets (Privacy Guides, alternativeto, awesome-privacy, Show HN, lobste.rs, IndieWeb wiki), the philosophical-post strategy, and a quarterly audit checklist. Reusable across sibling projects.
+
+### Deferred
+
+- `web/og-card.png` (1200×630) — richer link unfurls. Design task.
+- JSON-LD `SoftwareApplication` schema — skipped on principle for now per the guide.
+
+### Verified
+
+`curl https://late.fyi/robots.txt` returns the file; head tags present in the served HTML. Cloudflare Pages-style worker auto-deployed from git push, no manual step.
+
+---
+
 ## 0.14.5 / PRD 1.14.5 — Mode A push events + deploy soak (2026-05-04)
 
 ### Changed

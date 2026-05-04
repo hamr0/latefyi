@@ -1,6 +1,6 @@
 {
   "name": "latefyi",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "type": "module",
   "private": true,
   "description": "Email-driven European train tracker",
