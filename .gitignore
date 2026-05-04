@@ -13,3 +13,4 @@ Thumbs.db
 .idea/
 .vscode/
 .claude/settings.local.json
+.claude/stash/
