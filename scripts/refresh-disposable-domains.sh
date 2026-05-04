@@ -22,4 +22,11 @@ if [ "$LINES" -lt 1000 ]; then
   exit 1
 fi
 mv "$TMP" "$DEST"
+# mktemp creates 0600; the ingest service runs as `latefyi` and needs to
+# read this. Cron runs as root, so also hand ownership back to the service
+# user — otherwise the next restart EACCES-loops on startup.
+chmod 644 "$DEST"
+if [ "$(id -u)" = '0' ] && id latefyi >/dev/null 2>&1; then
+  chown latefyi:latefyi "$DEST"
+fi
 echo "wrote $DEST ($LINES domains)"
