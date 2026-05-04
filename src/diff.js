@@ -51,27 +51,38 @@ function richBody(curr, prev, { headline, marks = new Set() } = {}) {
   const line = curr.line || curr.trainNum;
   const fromName = curr.fromName ?? '?';
   const toName = curr.toName ?? '?';
+  const isPickup = curr.mode === 'A';
 
-  const depDelay = curr.departureDelayMin ?? 0;
   const arrDelay = curr.arrivalDelayMin ?? 0;
-  const depDelayTag = depDelay ? ` (+${depDelay}min)` : '';
   const arrDelayTag = arrDelay ? ` (+${arrDelay}min)` : '';
-
-  const depPlatStr = curr.departurePlatform || 'TBC';
   const arrPlatStr = curr.arrivalPlatform   || 'TBC';
-  const depPlatWas = (prev && prev.departurePlatform && prev.departurePlatform !== curr.departurePlatform)
-    ? ` (was ${prev.departurePlatform})` : '';
   const arrPlatWas = (prev && prev.arrivalPlatform && prev.arrivalPlatform !== curr.arrivalPlatform)
     ? ` (was ${prev.arrivalPlatform})` : '';
 
   const mark = (key) => marks.has(key) ? '> ' : '';
 
-  const lines = [
+  // Pickup users don't board, so the body collapses to arrival-only:
+  // no dep line, no departure-platform field. Mirrors the confirmation
+  // reply shape (src/reply.js confirmationReply branch on resolved.mode).
+  if (isPickup) {
+    return [
+      headline || `Picking up ${line} at ${toName}.`,
+      `${mark('time')}Scheduled arrival: ${fmtDatetime(curr.scheduledArrival)} ${toName}${arrDelayTag}.`,
+      `${mark('arrPlat')}Arrival platform: ${arrPlatStr}${arrPlatWas}`,
+    ].join('\n');
+  }
+
+  const depDelay = curr.departureDelayMin ?? 0;
+  const depDelayTag = depDelay ? ` (+${depDelay}min)` : '';
+  const depPlatStr = curr.departurePlatform || 'TBC';
+  const depPlatWas = (prev && prev.departurePlatform && prev.departurePlatform !== curr.departurePlatform)
+    ? ` (was ${prev.departurePlatform})` : '';
+
+  return [
     headline || `${line}, ${fromName} → ${toName}.`,
     `${mark('time')}Scheduled: dep ${fmtDatetime(curr.scheduledDeparture)} ${fromName}${depDelayTag}, arr ${fmtDatetime(curr.scheduledArrival)} ${toName}${arrDelayTag}.`,
     `${mark('depPlat')}Departure platform: ${depPlatStr}${depPlatWas}    ${mark('arrPlat')}Arrival platform: ${arrPlatStr}${arrPlatWas}`,
-  ];
-  return lines.join('\n');
+  ].join('\n');
 }
 
 export function diff(prev, curr, opts = {}) {
@@ -81,15 +92,20 @@ export function diff(prev, curr, opts = {}) {
   const line = curr.line || curr.trainNum;
   const fromN = curr.fromName ?? '?';
   const toN = curr.toName ?? '?';
-  const route = `${fromN} → ${toN}`;
+  const isPickup = curr.mode === 'A';
+  // Pickup bodies don't have an origin to anchor a "X → Y" route — collapse
+  // to "at <to>" so push event headlines read naturally for the meeter.
+  const route = isPickup ? `at ${toN}` : `${fromN} → ${toN}`;
 
   // ---- Window 1: tracking start (T-30 mandatory push). ----
   if (!prev) {
+    const startTitle = isPickup ? `Picking up ${line}` : `Tracking ${line}`;
+    const startHead  = isPickup ? `Picking up ${line} at ${toN}.` : `Tracking ${line}, ${route}.`;
     events.push({
       type: 'tracking_started',
       priority: 'default',
-      title: `Tracking ${line}`,
-      body: richBody(curr, null, { headline: `Tracking ${line}, ${route}.` }),
+      title: startTitle,
+      body: richBody(curr, null, { headline: startHead }),
     });
     return events;
   }
@@ -201,11 +217,14 @@ export function diff(prev, curr, opts = {}) {
   const prevToCancelled = !!prev.stopoversCancelled?.[curr.toName];
   const currToCancelled = !!curr.stopoversCancelled?.[curr.toName];
   if (curr.toName && !prevToCancelled && currToCancelled) {
+    // Mode A: "TERMINATING before X, at X" reads tautologically; drop the
+    // route tail in pickup mode since toName is already in the headline.
+    const tail = isPickup ? '' : `, ${route}`;
     events.push({
       type: 'terminating_short',
       priority: 'urgent',
       title: `${line} TERMINATING before ${curr.toName}`,
-      body: `${line} TERMINATING before ${curr.toName}, ${route}.\nTrain will not reach ${curr.toName}. Check operator app for onward connection.`,
+      body: `${line} TERMINATING before ${curr.toName}${tail}.\nTrain will not reach ${curr.toName}. Check operator app for onward connection.`,
     });
   }
 
@@ -221,11 +240,14 @@ export function diff(prev, curr, opts = {}) {
 
   // ---- Arrived (terminal). ----
   if (!prev.hasArrived && curr.hasArrived) {
+    // Same redundancy avoidance as terminating_short: "arrived X, at X" is
+    // tautological for pickup mode where toName is also the route anchor.
+    const tail = isPickup ? '' : `, ${route}`;
     events.push({
       type: 'arrived',
       priority: 'default',
       title: `${line} arrived ${toN}`,
-      body: `${line} arrived ${toN}, ${route}.\nArrived ~${fmtTime(curr.predictedArrival)}, platform ${plat(curr.arrivalPlatform)}. Tracking ended.`,
+      body: `${line} arrived ${toN}${tail}.\nArrived ~${fmtTime(curr.predictedArrival)}, platform ${plat(curr.arrivalPlatform)}. Tracking ended.`,
     });
   }
 

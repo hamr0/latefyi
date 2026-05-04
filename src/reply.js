@@ -125,7 +125,7 @@ export function confirmationReply({ resolved, sender, channel: _channel = 'email
     replyTo: trainNum ? `${trainNum}@${DOMAIN}` : undefined,
     body: isPickup
       ? `Picking up ${line} at ${toName}.${tripLine}\n` +
-        `Scheduled arrival: ${fmtDatetime(arr)}.\n` +
+        `Scheduled arrival: ${arr ? fmtDatetime(arr) : 'TBC'}.\n` +
         `Arrival platform: ${arrPlat}\n` +
         `Status: ${status}\n` +
         `${updatesLine}\n\n${stopBlock}`

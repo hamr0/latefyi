@@ -202,3 +202,82 @@ test('multiple simultaneous changes produce multiple events', () => {
   assert.ok(types.includes('platform_changed'));
   assert.ok(types.includes('delay_change'));
 });
+
+// ===== Mode A pickup body shape =====
+
+const pickupSnap = (over = {}) => baseSnap({
+  mode: 'A',
+  fromName: null,
+  // Pickup users only supply To:; resolve.js leaves dep schedule unset.
+  scheduledDeparture: null, predictedDeparture: null, departureDelayMin: 0,
+  departurePlatform: null, departurePlatformScheduled: null,
+  toName: 'Paris Nord',
+  scheduledArrival: '2026-05-04T12:40:00Z',
+  predictedArrival: '2026-05-04T12:40:00Z',
+  arrivalDelayMin: 0,
+  arrivalPlatform: null, arrivalPlatformScheduled: null,
+  ...over,
+});
+
+test('Mode A T-30: title + body use Picking up verb, no origin', () => {
+  const e = diff(null, pickupSnap());
+  assert.equal(e.length, 1);
+  assert.equal(e[0].type, 'tracking_started');
+  assert.equal(e[0].title, 'Picking up ICE 145');
+  assert.match(e[0].body, /^Picking up ICE 145 at Paris Nord\./);
+  assert.doesNotMatch(e[0].body, /→/);
+  assert.doesNotMatch(e[0].body, /\bdep\b/);
+  assert.doesNotMatch(e[0].body, /Departure platform/);
+});
+
+test('Mode A T-30: body shows Scheduled arrival only (no dep line)', () => {
+  const e = diff(null, pickupSnap());
+  assert.match(e[0].body, /Scheduled arrival: .* Paris Nord\./);
+  assert.match(e[0].body, /Arrival platform: TBC/);
+});
+
+test('Mode A platform_assigned: headline says arrival platform at <to>', () => {
+  const prev = pickupSnap({ arrivalPlatform: null });
+  const curr = pickupSnap({ arrivalPlatform: '5' });
+  const e = diff(prev, curr);
+  const ev = e.find(x => x.type === 'platform_assigned');
+  assert.ok(ev);
+  assert.match(ev.body, /^ICE 145 arrival platform: 5, at Paris Nord\./);
+  assert.doesNotMatch(ev.body, /\? →/);
+  assert.doesNotMatch(ev.body, /Departure platform/);
+});
+
+test('Mode A delay_change: headline reads "<line> arrival +Nmin, at <to>"', () => {
+  const prev = pickupSnap({ arrivalDelayMin: 0 });
+  const curr = pickupSnap({ arrivalDelayMin: 6 });
+  const e = diff(prev, curr);
+  const ev = e.find(x => x.type === 'delay_change');
+  assert.ok(ev);
+  assert.match(ev.body, /^ICE 145 arrival \+6min, at Paris Nord\./);
+});
+
+test('Mode A terminating_short: drops route tail (no "at X, at X")', () => {
+  const prev = pickupSnap({ stopoversCancelled: {} });
+  const curr = pickupSnap({ stopoversCancelled: { 'Paris Nord': true } });
+  const e = diff(prev, curr);
+  const ev = e.find(x => x.type === 'terminating_short');
+  assert.ok(ev);
+  assert.match(ev.body, /^ICE 145 TERMINATING before Paris Nord\./);
+  assert.doesNotMatch(ev.body, /at Paris Nord, at Paris Nord/);
+});
+
+test('Mode A arrived: drops route tail (no "arrived X, at X")', () => {
+  const prev = pickupSnap({ hasArrived: false });
+  const curr = pickupSnap({ hasArrived: true, arrivalPlatform: '5' });
+  const e = diff(prev, curr);
+  const ev = e.find(x => x.type === 'arrived');
+  assert.ok(ev);
+  assert.match(ev.body, /^ICE 145 arrived Paris Nord\./);
+  assert.doesNotMatch(ev.body, /arrived Paris Nord, at Paris Nord/);
+});
+
+test('Mode B regression: T-30 body still says "Tracking <line>, A → B."', () => {
+  const e = diff(null, baseSnap());
+  assert.match(e[0].body, /^Tracking ICE 145, Amsterdam Centraal → Berlin Ostbahnhof\./);
+  assert.match(e[0].body, /Departure platform:/);
+});

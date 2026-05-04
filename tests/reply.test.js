@@ -171,6 +171,32 @@ test('pickup: T-30 anchored on arrival (10:40 → 10:10)', () => {
   assert.match(r.body, /Updates by email starting T-30 at 10:10/);
 });
 
+test('pickup: with trip set, includes Trip line and [trip] subject prefix', () => {
+  const r = confirmationReply({
+    resolved: pickupResolved({ trip: 'paris-weekend' }),
+    sender: 'a@b', trainNum: 'EUR9328',
+  });
+  assert.match(r.subject, /^Pickup EUR 9328 \[paris-weekend\] — Paris Nord/);
+  assert.match(r.body, /\nTrip: paris-weekend\n/);
+});
+
+test('pickup: missing scheduled arrival renders TBC, T-30 line falls back to ?', () => {
+  const r = confirmationReply({
+    resolved: pickupResolved({ schedule: { scheduledDeparture: null, scheduledArrival: null } }),
+    sender: 'a@b', trainNum: 'EUR9328',
+  });
+  assert.match(r.body, /Scheduled arrival: TBC\./);
+  assert.match(r.body, /Updates by email starting T-30 at \?\./);
+});
+
+test('pickup: without trainNum arg, fromLocal falls back to help and replyTo is unset', () => {
+  const r = confirmationReply({ resolved: pickupResolved(), sender: 'a@b' });
+  assert.equal(r.from, 'latefyi <help@late.fyi>');
+  assert.equal(r.headers['Reply-To'], undefined);
+  // Body still well-formed
+  assert.match(r.body, /^Picking up EUR 9328 at Paris Nord\./);
+});
+
 // ===== confirmation: boarding mode keeps existing wording =====
 
 test('boarding (mode B): body still opens "Tracking X, A → B."', () => {

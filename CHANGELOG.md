@@ -10,6 +10,36 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.5 / PRD 1.14.5 — Mode A push events + deploy soak (2026-05-04)
+
+### Changed
+
+`src/diff.js` is now fully mode-aware. 0.14.4 fixed only the confirmation reply; every push event that follows (T-30 mandatory push, platform assigned/changed, delay change, terminating short, arrived) was still emitting the boarding shape — so a pickup user got "Picking up EUR9328 at Paris Nord." in the confirmation and then "Tracking EUR 9328, ? → Paris Nord." in the very next email. This release closes the gap.
+
+Pickup mode now emits, across all event types:
+- `richBody`: drops the dep schedule line and `Departure platform` field; surfaces only `Scheduled arrival: <time> <to>` and `Arrival platform: <plat>`.
+- `tracking_started`: title `Picking up <line>`, body opener `Picking up <line> at <to>.`
+- `platform_assigned` / `platform_changed`: headline `<line> arrival platform: <p>, at <to>.` (anchor was already arrival in 1.14.0; only the body copy lagged).
+- `delay_change`: headline `<line> arrival +Nmin, at <to>.`
+- `terminating_short` / `arrived`: route tail dropped because `<verb> X, at X` reads tautologically (toName is already the headline anchor).
+
+`src/poll-runner.js` now passes `scheduledArrival` as `scheduledIso` for Mode A trains so the push subject's date suffix (` — Monday, 2026-05-04`) matches the confirmation's, instead of being absent (Mode A had no `scheduledDeparture` to anchor on).
+
+### Fixed
+
+- `confirmationReply` Mode A with `arr=null` (degraded HAFAS response that found the train but no plannedArrival) now renders `Scheduled arrival: TBC.` instead of `Scheduled arrival: ?.`. T-30 line also falls back to `at ?` when no anchor.
+- `scripts/deploy.sh` soaks 3 s after `systemctl restart` then re-checks `is-active` and tails recent journal lines. Catches the crash-loop pattern that masked the EACCES regression on the previous deploy (unit reports `active` at start, crashes ~200 ms later before deploy script's immediate check returns).
+
+### Tests
+
+281/281 pass (was 271). New: 7 diff.js Mode A tests (T-30 verb, no-origin, no dep platform, scheduled-arrival-only, platform_assigned headline, delay_change headline, terminating_short / arrived route-tail dropped) + 1 boarding regression guard + 3 confirmation gap tests (pickup+trip, pickup+arr=null, pickup without trainNum).
+
+### Audit
+
+VPS root cron writes into `/opt/latefyi/` were audited: only `cron-refresh-disposable.sh` (already self-healing per 1.14.4). `wake.sh` runs as `latefyi`, so any state files it writes are correctly owned. No further perm traps.
+
+---
+
 ## 0.14.4 / PRD 1.14.4 — Mode A pickup confirmation + post-refresh EACCES fix (2026-05-04)
 
 ### Changed
