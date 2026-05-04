@@ -10,6 +10,47 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.14.3 / PRD 1.14.3 — Self-contained push body openers (2026-05-04)
+
+### Changed
+
+Every push body's first line now mirrors the subject's verb so the body reads as a complete sentence on its own — notification previews, forwarded mail, and archive snippets that strip the subject still tell the user *what kind* of update this is.
+
+Before:
+```
+Subject: Tracking ECD 9536 — Monday, 2026-05-04
+Body:    ECD 9536, Amsterdam Centraal → Bruxelles Midi.
+         Scheduled: dep ...
+```
+
+After:
+```
+Subject: Tracking ECD 9536 — Monday, 2026-05-04
+Body:    Tracking ECD 9536, Amsterdam Centraal → Bruxelles Midi.
+         Scheduled: dep ...
+```
+
+Same pattern applied to all event types:
+
+| Event                       | New body opener                                                          |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `tracking_started`          | `Tracking <line>, <from> → <to>.`                                        |
+| `platform_assigned`         | `<line> departure platform: <plat>, <from> → <to>.`                      |
+| `platform_changed`          | `<line> departure platform CHANGED → <new> (was <old>), <from> → <to>.`  |
+| `delay_change`              | `<line> departure +<N>min, <from> → <to>.`                               |
+| `arrival_platform_assigned` | `<line> arrival platform: <plat>, <from> → <to>.`                        |
+| `arrival_platform_changed`  | `<line> arrival platform CHANGED → <new> (was <old>), <from> → <to>.`    |
+| `arrival_delay_change`      | `<line> arrival +<N>min, <from> → <to>.`                                 |
+| `cancelled`                 | `<line> CANCELLED, <from> → <to>.`                                       |
+| `replaced`                  | `<line> REPLACED, <from> → <to>.`                                        |
+| `terminating_short`         | `<line> TERMINATING before <to>, <from> → <to>.`                         |
+| `departed`                  | `<line> departed <from>, <from> → <to>.`                                 |
+| `arrived`                   | `<line> arrived <to>, <from> → <to>.`                                    |
+
+`richBody()` in `src/diff.js` now takes an optional `headline` param (defaults to the bare-route line for back-compat). Each event in `diff()` passes the appropriate sentence-form opener. For pickup mode (mode A), platform/delay openers say "arrival" instead of "departure" — matching what the user actually cares about.
+
+`docs/02-features/email-formats.md` regenerated to show every new body opener verbatim.
+
 ## 0.14.2 / PRD 1.14.2 — Quarterly disposable-list refresh + email notification (2026-05-04)
 
 ### Added

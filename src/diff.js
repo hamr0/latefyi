@@ -31,15 +31,23 @@ function plat(p) { return p ?? '–'; }
 function delay(d) { return `+${d ?? 0}min`; }
 
 // Unified rich body — same shape as the original confirmation reply.
-// `marks` is a Set of row keys that changed since last snapshot:
-//   'time'    — schedule row (delays / time edits)
-//   'depPlat' — departure platform
-//   'arrPlat' — arrival platform
-// Each marked row gets a leading "> " so the user can spot what's new
-// without scanning the whole block. Inline annotations on the changed
-// field add the delta (e.g. " (+5min)" on a delayed time, " (was 15a)"
-// on a re-platformed train).
-function richBody(curr, prev, marks = new Set()) {
+//
+//   headline  — sentence-form opener that mirrors the event's title verb
+//               so the body is self-contained when read in isolation
+//               (notification preview, forwarded mail, archive snippet).
+//               e.g. 'Tracking ECD 9536, Amsterdam → Bruxelles.' for the
+//               T-30 push, 'ECD 9536 platform CHANGED → 16b — Amsterdam
+//               → Bruxelles.' for a platform-change event.
+//   marks     — Set of row keys that changed since last snapshot:
+//                 'time'    — schedule row (delays / time edits)
+//                 'depPlat' — departure platform
+//                 'arrPlat' — arrival platform
+//               Each marked row gets a leading "> " so the user can
+//               spot what's new without scanning the whole block.
+//               Inline annotations on the changed field add the delta
+//               (e.g. " (+5min)" on a delayed time, " (was 15a)" on a
+//               re-platformed train).
+function richBody(curr, prev, { headline, marks = new Set() } = {}) {
   const line = curr.line || curr.trainNum;
   const fromName = curr.fromName ?? '?';
   const toName = curr.toName ?? '?';
@@ -59,7 +67,7 @@ function richBody(curr, prev, marks = new Set()) {
   const mark = (key) => marks.has(key) ? '> ' : '';
 
   const lines = [
-    `${line}, ${fromName} → ${toName}.`,
+    headline || `${line}, ${fromName} → ${toName}.`,
     `${mark('time')}Scheduled: dep ${fmtDatetime(curr.scheduledDeparture)} ${fromName}${depDelayTag}, arr ${fmtDatetime(curr.scheduledArrival)} ${toName}${arrDelayTag}.`,
     `${mark('depPlat')}Departure platform: ${depPlatStr}${depPlatWas}    ${mark('arrPlat')}Arrival platform: ${arrPlatStr}${arrPlatWas}`,
   ];
@@ -70,13 +78,18 @@ export function diff(prev, curr, opts = {}) {
   const cfg = { ...DEFAULT_OPTS, ...opts };
   const events = [];
 
+  const line = curr.line || curr.trainNum;
+  const fromN = curr.fromName ?? '?';
+  const toN = curr.toName ?? '?';
+  const route = `${fromN} → ${toN}`;
+
   // ---- Window 1: tracking start (T-30 mandatory push). ----
   if (!prev) {
     events.push({
       type: 'tracking_started',
       priority: 'default',
-      title: `Tracking ${curr.line || curr.trainNum}`,
-      body: richBody(curr, null),
+      title: `Tracking ${line}`,
+      body: richBody(curr, null, { headline: `Tracking ${line}, ${route}.` }),
     });
     return events;
   }
@@ -86,8 +99,8 @@ export function diff(prev, curr, opts = {}) {
     events.push({
       type: 'cancelled',
       priority: 'urgent',
-      title: `${curr.line || curr.trainNum} CANCELLED`,
-      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nThis service is cancelled.`,
+      title: `${line} CANCELLED`,
+      body: `${line} CANCELLED, ${route}.\nThis service is cancelled.`,
     });
     return events;
   }
@@ -95,8 +108,8 @@ export function diff(prev, curr, opts = {}) {
     events.push({
       type: 'replaced',
       priority: 'urgent',
-      title: `${curr.line || curr.trainNum} replacement service`,
-      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nReplaced — check operator app for the substitute service.`,
+      title: `${line} replacement service`,
+      body: `${line} REPLACED, ${route}.\nCheck operator app for the substitute service.`,
     });
   }
 
@@ -105,20 +118,27 @@ export function diff(prev, curr, opts = {}) {
   const prevAnchorPlat = anchorIsArr ? prev.arrivalPlatform : prev.departurePlatform;
   const currAnchorPlat = anchorIsArr ? curr.arrivalPlatform : curr.departurePlatform;
   const anchorPlatMark = anchorIsArr ? 'arrPlat' : 'depPlat';
+  const anchorWord = anchorIsArr ? 'arrival' : 'departure';
 
   if (!prevAnchorPlat && currAnchorPlat) {
     events.push({
       type: 'platform_assigned',
       priority: 'urgent',
-      title: `${curr.line || curr.trainNum} → Platform ${currAnchorPlat}`,
-      body: richBody(curr, prev, new Set([anchorPlatMark])),
+      title: `${line} → Platform ${currAnchorPlat}`,
+      body: richBody(curr, prev, {
+        headline: `${line} ${anchorWord} platform: ${currAnchorPlat}, ${route}.`,
+        marks: new Set([anchorPlatMark]),
+      }),
     });
   } else if (prevAnchorPlat && currAnchorPlat && prevAnchorPlat !== currAnchorPlat) {
     events.push({
       type: 'platform_changed',
       priority: 'urgent',
-      title: `${curr.line || curr.trainNum} platform CHANGED → ${currAnchorPlat}`,
-      body: richBody(curr, prev, new Set([anchorPlatMark])),
+      title: `${line} platform CHANGED → ${currAnchorPlat}`,
+      body: richBody(curr, prev, {
+        headline: `${line} ${anchorWord} platform CHANGED → ${currAnchorPlat} (was ${prevAnchorPlat}), ${route}.`,
+        marks: new Set([anchorPlatMark]),
+      }),
     });
   }
 
@@ -131,8 +151,11 @@ export function diff(prev, curr, opts = {}) {
     events.push({
       type: 'delay_change',
       priority: 'high',
-      title: `${curr.line || curr.trainNum} ${delay(currAnchorDelay)}`,
-      body: richBody(curr, prev, new Set(['time'])),
+      title: `${line} ${delay(currAnchorDelay)}`,
+      body: richBody(curr, prev, {
+        headline: `${line} ${anchorWord} ${delay(currAnchorDelay)}, ${route}.`,
+        marks: new Set(['time']),
+      }),
     });
   }
 
@@ -142,15 +165,21 @@ export function diff(prev, curr, opts = {}) {
       events.push({
         type: 'arrival_platform_assigned',
         priority: 'urgent',
-        title: `${curr.line || curr.trainNum} → arrival Platform ${curr.arrivalPlatform}`,
-        body: richBody(curr, prev, new Set(['arrPlat'])),
+        title: `${line} → arrival Platform ${curr.arrivalPlatform}`,
+        body: richBody(curr, prev, {
+          headline: `${line} arrival platform: ${curr.arrivalPlatform}, ${route}.`,
+          marks: new Set(['arrPlat']),
+        }),
       });
     } else if (prev.arrivalPlatform && curr.arrivalPlatform && prev.arrivalPlatform !== curr.arrivalPlatform) {
       events.push({
         type: 'arrival_platform_changed',
         priority: 'urgent',
-        title: `${curr.line || curr.trainNum} arrival platform CHANGED → ${curr.arrivalPlatform}`,
-        body: richBody(curr, prev, new Set(['arrPlat'])),
+        title: `${line} arrival platform CHANGED → ${curr.arrivalPlatform}`,
+        body: richBody(curr, prev, {
+          headline: `${line} arrival platform CHANGED → ${curr.arrivalPlatform} (was ${prev.arrivalPlatform}), ${route}.`,
+          marks: new Set(['arrPlat']),
+        }),
       });
     }
     const prevArrDelay = prev.arrivalDelayMin ?? 0;
@@ -159,8 +188,11 @@ export function diff(prev, curr, opts = {}) {
       events.push({
         type: 'arrival_delay_change',
         priority: 'high',
-        title: `${curr.line || curr.trainNum} arrival ${delay(currArrDelay)}`,
-        body: richBody(curr, prev, new Set(['time'])),
+        title: `${line} arrival ${delay(currArrDelay)}`,
+        body: richBody(curr, prev, {
+          headline: `${line} arrival ${delay(currArrDelay)}, ${route}.`,
+          marks: new Set(['time']),
+        }),
       });
     }
   }
@@ -172,8 +204,8 @@ export function diff(prev, curr, opts = {}) {
     events.push({
       type: 'terminating_short',
       priority: 'urgent',
-      title: `${curr.line || curr.trainNum} TERMINATING before ${curr.toName}`,
-      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nTrain will not reach ${curr.toName}. Check operator app for onward connection.`,
+      title: `${line} TERMINATING before ${curr.toName}`,
+      body: `${line} TERMINATING before ${curr.toName}, ${route}.\nTrain will not reach ${curr.toName}. Check operator app for onward connection.`,
     });
   }
 
@@ -182,8 +214,8 @@ export function diff(prev, curr, opts = {}) {
     events.push({
       type: 'departed',
       priority: 'default',
-      title: `${curr.line || curr.trainNum} departed ${curr.fromName ?? '?'}`,
-      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nLeft at ~${fmtTime(curr.predictedDeparture)}, ${delay(curr.departureDelayMin)}.`,
+      title: `${line} departed ${fromN}`,
+      body: `${line} departed ${fromN}, ${route}.\nLeft at ~${fmtTime(curr.predictedDeparture)}, ${delay(curr.departureDelayMin)}.`,
     });
   }
 
@@ -192,8 +224,8 @@ export function diff(prev, curr, opts = {}) {
     events.push({
       type: 'arrived',
       priority: 'default',
-      title: `${curr.line || curr.trainNum} arrived ${curr.toName ?? '?'}`,
-      body: `${curr.line || curr.trainNum}, ${curr.fromName ?? '?'} → ${curr.toName ?? '?'}.\nArrived ~${fmtTime(curr.predictedArrival)}, platform ${plat(curr.arrivalPlatform)}. Tracking ended.`,
+      title: `${line} arrived ${toN}`,
+      body: `${line} arrived ${toN}, ${route}.\nArrived ~${fmtTime(curr.predictedArrival)}, platform ${plat(curr.arrivalPlatform)}. Tracking ended.`,
     });
   }
 

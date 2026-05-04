@@ -349,12 +349,14 @@ Sent by `latefyi-poller` between `poll_start_time` (T-30) and the trip's termina
 | `arrived`                      | default  | `hasArrived` flipped true (terminal)                                 |
 | `tracking_lost`                | urgent   | `MAX_CONSECUTIVE_FAILURES` (6) consecutive HAFAS errors (synthesised by `poll.js`, not `diff.js`) |
 
+**Body convention.** Every push body's first line mirrors the subject's verb so the body is self-contained when read in isolation (notification preview, forwarded mail, archive snippet). Earlier versions used a bare `<line>, <from> → <to>.` opener that didn't say what kind of event it was.
+
 ### tracking_started (T-30)
 
 **Subject:** `Tracking EUR 9340 — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+Tracking EUR 9340, Amsterdam Centraal → Paris Nord.
 Scheduled: dep Monday, 2026-05-04 11:10 Amsterdam Centraal, arr Monday, 2026-05-04 14:42 Paris Nord.
 Departure platform: 15a    Arrival platform: TBC
 ```
@@ -364,7 +366,7 @@ Departure platform: 15a    Arrival platform: TBC
 **Subject:** `EUR 9340 platform CHANGED → 16b — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 departure platform CHANGED → 16b (was 15a), Amsterdam Centraal → Paris Nord.
 Scheduled: dep Monday, 2026-05-04 11:10 Amsterdam Centraal, arr Monday, 2026-05-04 14:42 Paris Nord.
 > Departure platform: 16b (was 15a)    Arrival platform: TBC
 ```
@@ -374,7 +376,7 @@ Scheduled: dep Monday, 2026-05-04 11:10 Amsterdam Centraal, arr Monday, 2026-05-
 **Subject:** `EUR 9340 +5min — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 departure +5min, Amsterdam Centraal → Paris Nord.
 > Scheduled: dep Monday, 2026-05-04 11:10 Amsterdam Centraal (+5min), arr Monday, 2026-05-04 14:42 Paris Nord.
 Departure platform: 15a    Arrival platform: TBC
 ```
@@ -384,7 +386,7 @@ Departure platform: 15a    Arrival platform: TBC
 **Subject:** `EUR 9340 → arrival Platform 7 — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 arrival platform: 7, Amsterdam Centraal → Paris Nord.
 Scheduled: dep Monday, 2026-05-04 11:10 Amsterdam Centraal, arr Monday, 2026-05-04 14:42 Paris Nord.
 Departure platform: 15a    > Arrival platform: 7
 ```
@@ -394,7 +396,7 @@ Departure platform: 15a    > Arrival platform: 7
 **Subject:** `EUR 9340 arrival +8min — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 arrival +8min, Amsterdam Centraal → Paris Nord.
 > Scheduled: dep Monday, 2026-05-04 11:10 Amsterdam Centraal, arr Monday, 2026-05-04 14:42 Paris Nord (+8min).
 Departure platform: 15a    Arrival platform: TBC
 ```
@@ -404,7 +406,7 @@ Departure platform: 15a    Arrival platform: TBC
 **Subject:** `EUR 9340 CANCELLED — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 CANCELLED, Amsterdam Centraal → Paris Nord.
 This service is cancelled.
 ```
 
@@ -413,8 +415,8 @@ This service is cancelled.
 **Subject:** `EUR 9340 replacement service — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
-Replaced — check operator app for the substitute service.
+EUR 9340 REPLACED, Amsterdam Centraal → Paris Nord.
+Check operator app for the substitute service.
 ```
 
 ### terminating_short
@@ -422,7 +424,7 @@ Replaced — check operator app for the substitute service.
 **Subject:** `EUR 9340 TERMINATING before Paris Nord — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 TERMINATING before Paris Nord, Amsterdam Centraal → Paris Nord.
 Train will not reach Paris Nord. Check operator app for onward connection.
 ```
 
@@ -431,7 +433,7 @@ Train will not reach Paris Nord. Check operator app for onward connection.
 **Subject:** `EUR 9340 departed Amsterdam Centraal — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 departed Amsterdam Centraal, Amsterdam Centraal → Paris Nord.
 Left at ~11:10, +0min.
 ```
 
@@ -440,7 +442,7 @@ Left at ~11:10, +0min.
 **Subject:** `EUR 9340 arrived Paris Nord — Monday, 2026-05-04`
 
 ```
-EUR 9340, Amsterdam Centraal → Paris Nord.
+EUR 9340 arrived Paris Nord, Amsterdam Centraal → Paris Nord.
 Arrived ~14:42, platform –. Tracking ended.
 ```
 
