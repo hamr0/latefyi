@@ -10,6 +10,11 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Added
+
+- **Brand mark.** `web/favicon.svg` — lowercase `l` with an amber dot, doubling as `.fyi` punctuation and a status indicator. Wired via `<link rel="icon">` in `web/index.html`.
+- **Inline header logo.** `web/logo.svg` — bg-free variant of the mark used next to the wordmark in the landing page header, sized to match cap-height. Amber `.` separator placed between logo and `late.fyi` wordmark.
+
 ### Docs (PRD 1.14.6)
 
 Design lock + regional survey, no code changes. Captures decisions reached via a second-pass POC (untracked diagnostics in `scripts/poc-*.js`, not shipped):
