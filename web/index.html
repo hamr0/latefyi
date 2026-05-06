@@ -40,6 +40,7 @@
 
   .brand {
     display: flex; align-items: baseline; gap: 0.7rem;
+    flex-wrap: wrap;
     margin-bottom: 2rem;
   }
   .brand .logo { height: 2.2rem; width: auto; align-self: center; display: block; }
@@ -47,6 +48,11 @@
   .brand .name { font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
   .brand .name span { color: var(--amber); }
   .brand .sub { color: var(--muted); font-size: 0.9rem; }
+  @media (max-width: 600px) {
+    .brand .logo { height: 1.8rem; }
+    .brand .sep, .brand .name { font-size: 1.8rem; }
+    .brand .sub { flex-basis: 100%; font-size: 0.82rem; }
+  }
 
   h1 {
     font-size: clamp(1.6rem, 4.5vw, 2.6rem);
@@ -118,6 +124,13 @@
     color: var(--fg);
     overflow-x: auto;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 600px) {
+    body { padding: 1.6rem 0.85rem 2.4rem; }
+    pre { font-size: 0.78rem; padding: 0.7rem 0.85rem; }
+    .lead { margin-bottom: 1.6rem; }
+    section { margin-top: 2.2rem; }
   }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
   @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
