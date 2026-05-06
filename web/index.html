@@ -42,8 +42,9 @@
     display: flex; align-items: baseline; gap: 0.7rem;
     margin-bottom: 2rem;
   }
-  .brand .logo { width: 3.6rem; height: 3.6rem; align-self: center; }
-  .brand .name { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
+  .brand .logo { height: 2.2rem; width: auto; align-self: center; display: block; }
+  .brand .sep { font-size: 2.2rem; font-weight: 700; color: var(--amber); align-self: center; line-height: 1; }
+  .brand .name { font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
   .brand .name span { color: var(--amber); }
   .brand .sub { color: var(--muted); font-size: 0.9rem; }
 
@@ -135,7 +136,8 @@
 <div class="wrap">
 
 <div class="brand">
-  <img class="logo" src="/favicon.svg" alt="">
+  <img class="logo" src="/logo.svg" alt="">
+  <div class="sep">.</div>
   <div class="name">late<span>.</span>fyi</div>
   <div class="sub">European rail tracker · email-driven</div>
 </div>
