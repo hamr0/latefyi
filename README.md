@@ -1,5 +1,10 @@
 # late.fyi
 
+<p align="center">
+  <img src="https://img.shields.io/github/package-json/v/hamr0/latefyi?label=version&color=2a4f8c" alt="version (auto from package.json)">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-2a4f8c" alt="license: Apache 2.0">
+</p>
+
 Email a train number. Get told when something changes.
 
 European trains only. No app. No account. No noise on time.
