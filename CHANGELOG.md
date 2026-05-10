@@ -15,6 +15,7 @@ This project tracks two streams in lockstep:
 - **Brand mark.** `web/favicon.svg` — lowercase `l` with an amber dot, doubling as `.fyi` punctuation and a status indicator. Wired via `<link rel="icon">` in `web/index.html`.
 - **Inline header logo.** `web/logo.svg` — bg-free variant of the mark used next to the wordmark in the landing page header, sized to match cap-height. Amber `.` separator placed between logo and `late.fyi` wordmark.
 - **Mobile-responsive landing page.** Brand row flex-wraps so the subtitle drops to its own line on narrow viewports; logo + wordmark scale down at ≤600px. `pre` blocks get `overflow-wrap: anywhere` (long mailto URLs no longer push the page wider than the viewport) plus tighter font/padding on mobile. Body padding tightened at ≤600px.
+- **OG image — link-preview banner.** `web/og.png` (1200×630, site palette) — closes out the placeholder noted in 0.14.6. `web/index.html` adds `og:image` (+ `:width`, `:height`, `:alt`) and upgrades `twitter:card` from `summary` (icon-only) to `summary_large_image` (banner). Static asset, no scripts, no third-party calls. WhatsApp / Slack / iMessage / LinkedIn / Discord previews now render the banner instead of a compact chain-icon row. After deploy, bust caches via Facebook's Sharing Debugger (covers WA + FB) and LinkedIn Post Inspector; Twitter picks up changes automatically within ~24h.
 
 ### Docs (PRD 1.14.6)
 
