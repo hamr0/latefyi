@@ -65,3 +65,5 @@ Outbound replies have `From: noreply@late.fyi` (worker drops `noreply@`) and `Re
 ## Update landing page privacy claim if you change retention
 
 `web/index.html` "What we don't do" section says "your address AND the record are deleted on trip end". If you ever add a `done/` archive (you shouldn't), update the page first.
+
+For full development and testing standards, see `/home/hamr/Documents/PycharmProjects/gitdone/.claude/memory/AGENT_RULES.md`.
