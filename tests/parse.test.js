@@ -17,6 +17,19 @@ const email = (over = {}) => ({
   ...over,
 });
 
+// Date fixtures must stay inside parseOnDate's [today, +90d] window, so derive
+// them relative to now instead of hardcoding (a fixed date rots into the past
+// and the test starts failing on its own). Returns both the ISO form and a
+// "D Mon YYYY" named form for the same UTC calendar date.
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function futureDate(daysAhead = 14) {
+  const d = new Date(Date.now() + daysAhead * 86400000);
+  return {
+    iso: d.toISOString().slice(0, 10),
+    named: `${d.getUTCDate()} ${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`,
+  };
+}
+
 // ===== Mode A (pickup) =====
 
 test('Mode A: To: only in subject → pickup mode', () => {
@@ -417,14 +430,15 @@ test('forgiving: "from amsterdam to berlin" without colons or commas', () => {
 });
 
 test('forgiving: "from X to Y on DATE" all bare', () => {
+  const { iso } = futureDate();
   const r = parse(email({
     to: 'ICE145@late.fyi',
-    subject: 'from amsterdam to paris nord on 2026-05-06',
+    subject: `from amsterdam to paris nord on ${iso}`,
   }));
   assert.equal(r.kind, 'track');
   assert.equal(r.from, 'amsterdam');
   assert.equal(r.to, 'paris nord');
-  assert.equal(r.onDate, '2026-05-06');
+  assert.equal(r.onDate, iso);
 });
 
 test('forgiving: mixed colon and bare (e.g. From: X, to Y)', () => {
@@ -438,34 +452,37 @@ test('forgiving: mixed colon and bare (e.g. From: X, to Y)', () => {
 });
 
 test('forgiving: bare ISO date is auto-tagged as on', () => {
+  const { iso } = futureDate();
   const r = parse(email({
     to: 'EUR9316@late.fyi',
-    subject: 'from amsterdam to paris nord 2026-05-06',
+    subject: `from amsterdam to paris nord ${iso}`,
   }));
   assert.equal(r.kind, 'track');
   assert.equal(r.from, 'amsterdam');
   assert.equal(r.to, 'paris nord');
-  assert.equal(r.onDate, '2026-05-06');
+  assert.equal(r.onDate, iso);
 });
 
 test('forgiving: bare named-month date is auto-tagged as on', () => {
+  const { iso, named } = futureDate();
   const r = parse(email({
     to: 'EUR9316@late.fyi',
-    subject: 'from amsterdam to paris nord 5 May 2026',
+    subject: `from amsterdam to paris nord ${named}`,
   }));
   assert.equal(r.kind, 'track');
   assert.equal(r.from, 'amsterdam');
   assert.equal(r.to, 'paris nord');
-  assert.equal(r.onDate, '2026-05-05');
+  assert.equal(r.onDate, iso);
 });
 
 test('forgiving: explicit On: still wins (no double-injection)', () => {
+  const { iso } = futureDate();
   const r = parse(email({
     to: 'ICE145@late.fyi',
-    subject: 'From: Amsterdam, To: Berlin, On: 2026-05-04',
+    subject: `From: Amsterdam, To: Berlin, On: ${iso}`,
   }));
   assert.equal(r.kind, 'track');
-  assert.equal(r.onDate, '2026-05-04');
+  assert.equal(r.onDate, iso);
 });
 
 // ===== list =====
