@@ -10,6 +10,30 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.15.0 — Security hardening (2026-05-23)
+
+Closes the findings from a grounded security audit — each was reproduced with a PoC against the running code, then re-verified fixed. No behavior change for legitimate senders. 18 regression tests added (299 total; the 4 failures are pre-existing date-fixture staleness, unrelated).
+
+### Security
+
+- **Inbound sender authentication (anti-spoofing).** Every per-user action trusts `From`, so a forged sender could `STOP ALL` and delete a victim's active tracking. Both `worker/index.js` (edge, before waking the VPS) and `src/server.js` `handleInbound` (defense-in-depth) now drop mail whose `Authentication-Results` shows an explicit `dmarc=fail`, via `src/auth-results.js`. Conservative policy: reject only on `dmarc=fail`; absent header / `dmarc=none` / temperror pass through so legit mail from no-DMARC domains isn't bounced. "Fail anywhere rejects" — a forged `dmarc=pass` injected by the sender can't override Cloudflare's real verdict.
+- **ntfy fully gated while paused (`NTFY_ENABLED`, default off).** `effectiveChannels` always forced *critical* events (cancelled / replaced / terminating_short / tracking_lost) to BOTH channels, which silently defeated the email-only "pause" — cancellations were being published to `latefyi-sha256(email)[:16]`, a public, email-derivable ntfy topic, for users who never opted in. `dispatch`/`effectiveChannels` now take `ntfyEnabled`; the poll-runner passes it from `NTFY_ENABLED` and strips ntfy from *every* result while off (email remains the fallback, so no silent void). The "critical → both" semantics are preserved for when ntfy is re-enabled.
+- **Per-sender action limit across all command kinds.** Only `track` was rate-limited; `stop`/`list`/`config`/`reply`/`help` were unbounded (backscatter amplification + repeated full-state scans, and one user file created per distinct — spoofable — sender). New broad ceiling of 60 inbound commands/hr/sender (`checkActionRateLimit`/`recordAction` in `users.js`), checked in `handleInbound` after the auth gate; over the cap → silent drop.
+- **Cross-sender record overwrite fixed.** Pending/active files were keyed on the sanitized inbound `Message-ID`; two senders with msgids that sanitize identically (`<a/b@…>` and `<a_b@…>`) collided, letting a crafted Message-ID overwrite another sender's record. Files are now `<senderHash>-<msgid>.json` (`src/schedule.js`).
+
+### Changed
+
+- **`nodemailer` 6.10.1 → 8.0.7.** Clears the recursive-`addressparser` DoS (GHSA-rcmh-qjqh-p98v) and related advisories; the parser is reachable via the reply `to:` which derives from the attacker-influenced `From`. `npm audit` now reports 0 vulnerabilities (also bumped transitive `qs`).
+- **SSH operator scripts hardened.** `scripts/{deploy,vps}.sh` use `StrictHostKeyChecking=accept-new` (was `no`); `scripts/vps.sh` caches the decrypted key in `$XDG_RUNTIME_DIR` (per-user tmpfs, mode 0700, cleared on logout) instead of world-shared `/tmp`.
+
+### Fixed
+
+- **`findRecordsForSender` no longer parses every user's records.** It scopes by the new `<senderHash>-` filename prefix (O(this sender's records), not O(all active trains)), with a transitional content-check fallback for any record predating the prefix scheme so in-flight trips aren't orphaned across this deploy.
+
+### Docs (PRD 1.15.0)
+
+- **§19 Security & Privacy** updated: added sender-authentication and per-sender action-limit entries; rewrote the ntfy-topic line to state the derivability risk, the `NTFY_ENABLED` pause, and the requirement to mix in a per-user secret before un-pausing.
+
 ### Added
 
 - **Brand mark.** `web/favicon.svg` — lowercase `l` with an amber dot, doubling as `.fyi` punctuation and a status indicator. Wired via `<link rel="icon">` in `web/index.html`.

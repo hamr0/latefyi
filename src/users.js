@@ -50,6 +50,9 @@ function defaultRecord(email) {
     // Bounded timestamp array of fresh tracking requests in the last 24h.
     // Trimmed on every recordRequest() call. Used by checkRateLimit().
     recent_requests: [],
+    // Bounded timestamp array of ALL inbound commands in the last 1h.
+    // Trimmed on every recordAction() call. Used by checkActionRateLimit().
+    recent_actions: [],
   };
 }
 
@@ -96,6 +99,11 @@ export const DEFAULT_LIMITS = {
   perHour: 10,
   perDay: 50,
   maxActiveTrains: 20,
+  // Broad ceiling across ALL inbound commands per sender per hour (track,
+  // stop, list, config, reply, help, error). Far above any human usage; exists
+  // only to cap backscatter amplification and repeated state scans from a
+  // single sender. The track-specific perHour/perDay above are much tighter.
+  perHourActions: 60,
 };
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -122,6 +130,29 @@ export function checkRateLimit(record, now = Date.now(), limits = DEFAULT_LIMITS
     return { allowed: false, reason: 'daily', retryAt };
   }
   return { allowed: true };
+}
+
+// Broad per-sender action limit — see DEFAULT_LIMITS.perHourActions. Pure:
+// returns { allowed }. Counts entries in recent_actions within the last hour.
+export function checkActionRateLimit(record, now = Date.now(), limits = DEFAULT_LIMITS) {
+  const max = limits.perHourActions ?? DEFAULT_LIMITS.perHourActions;
+  const recents = (record?.recent_actions || []).map(t => Date.parse(t)).filter(t => !isNaN(t));
+  const lastHour = recents.filter(t => now - t < ONE_HOUR_MS).length;
+  return lastHour >= max ? { allowed: false } : { allowed: true };
+}
+
+// Append `now` to recent_actions, trim entries older than 1h. Persists.
+// Capped at 500 entries (defensive — well above perHourActions).
+export function recordAction(email, stateDir, now = Date.now()) {
+  const rec = getOrCreate(email, stateDir);
+  const cutoff = now - ONE_HOUR_MS;
+  const kept = (rec.recent_actions || [])
+    .filter(t => Date.parse(t) >= cutoff)
+    .concat([new Date(now).toISOString()]);
+  rec.recent_actions = kept.slice(-500);
+  rec.last_seen_at = new Date(now).toISOString();
+  atomicWrite(userPath(stateDir, email), rec);
+  return rec;
 }
 
 // Append `now` to recent_requests, trim entries older than 24h. Persists.

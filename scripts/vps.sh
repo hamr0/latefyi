@@ -5,7 +5,10 @@
 #   scripts/vps.sh -- scp file root@host:/path   # arbitrary ssh-family commands
 set -euo pipefail
 
-KEY="${LATEFYI_SSH_KEY:-/tmp/latefyi_key}"
+# Cache the decrypted key in the per-user runtime dir (mode 0700 tmpfs, cleared
+# on logout) rather than world-shared /tmp. Falls back to /tmp only if
+# XDG_RUNTIME_DIR is unset (non-systemd login).
+KEY="${LATEFYI_SSH_KEY:-${XDG_RUNTIME_DIR:-/tmp}/latefyi_key}"
 HOST="$(pass latefyi/ssh/host)"
 USER="$(pass latefyi/ssh/user)"
 
@@ -18,7 +21,7 @@ if [ ! -s "$KEY" ] || ! ssh-keygen -y -f "$KEY" >/dev/null 2>&1; then
   chmod 600 "$KEY"
 fi
 
-SSH_OPTS=(-i "$KEY" -o StrictHostKeyChecking=no -o BatchMode=yes)
+SSH_OPTS=(-i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes)
 
 if [ "${1:-}" = "--" ]; then
   shift

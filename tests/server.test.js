@@ -126,6 +126,64 @@ test('disposable: empty Set / null → check skipped', async () => {
   assert.doesNotMatch(r.subject, /Disposable address/i);
 });
 
+// ===== Sender authentication (anti-spoofing) =====
+
+test('auth: spoofed STOP (dmarc=fail) cannot delete a victim\'s tracking', async () => {
+  const { stateDir } = setup();
+  // Victim tracks a train (no failing auth verdict).
+  await handleInbound({
+    email: baseEmail({ subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.equal(readdirSync(join(stateDir, 'pending')).length, 1);
+
+  // Attacker spoofs the victim's From with STOP ALL, but DMARC fails.
+  const spoof = await handleInbound({
+    email: baseEmail({
+      to: 'stop@late.fyi', subject: 'STOP ALL', body: 'STOP ALL',
+      headers: { 'authentication-results': 'mx.cloudflare.net; dmarc=fail (p=reject)' },
+    }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.equal(spoof, null, 'spoofed STOP must be silently dropped');
+  assert.equal(readdirSync(join(stateDir, 'pending')).length, 1, 'victim record must survive');
+
+  // The real owner (dmarc=pass) can still STOP.
+  const real = await handleInbound({
+    email: baseEmail({
+      to: 'stop@late.fyi', subject: 'STOP ALL', body: 'STOP ALL',
+      headers: { 'authentication-results': 'mx; dmarc=pass' },
+    }),
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.match(real.subject, /Stopped all/i);
+  assert.equal(readdirSync(join(stateDir, 'pending')).length, 0);
+});
+
+test('auth: missing Authentication-Results proceeds (don\'t bounce legit mail)', async () => {
+  const { stateDir } = setup();
+  const r = await handleInbound({
+    email: baseEmail({ to: 'help@late.fyi' }), // headers: {} → no verdict
+    stateDir, primaryClient: fakeOebb(),
+  });
+  assert.ok(r);
+});
+
+// ===== Broad per-sender action limit (covers all command kinds) =====
+
+test('action limit: applies to non-track commands, silent drop over cap', async () => {
+  const { stateDir } = setup();
+  const limits = { perHourActions: 3 };
+  const send = () => handleInbound({
+    email: baseEmail({ to: 'help@late.fyi' }),
+    stateDir, primaryClient: fakeOebb(), limits,
+  });
+  assert.ok(await send(), '1st allowed');
+  assert.ok(await send(), '2nd allowed');
+  assert.ok(await send(), '3rd allowed');
+  assert.equal(await send(), null, '4th over the per-hour action cap → dropped');
+});
+
 // ===== Track happy path =====
 
 test('track happy path: resolves, schedules, returns confirmation', async () => {

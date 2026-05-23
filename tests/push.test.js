@@ -86,6 +86,28 @@ test('critical event for ntfy-only user → also goes to email', async () => {
   assert.equal(transport.sent.ntfy.length, 1);
 });
 
+// ===== ntfy disabled (deployment pause) =====
+
+test('ntfyEnabled=false: critical event does NOT publish to ntfy (only email)', async () => {
+  const transport = makeTransport();
+  await dispatch(baseArgs({
+    events: [{ type: 'cancelled', priority: 'urgent', title: 'ICE 145 CANCELLED', body: '...' }],
+    userChannel: 'email', transport, ntfyEnabled: false,
+  }));
+  assert.equal(transport.sent.ntfy.length, 0, 'paused ntfy must not receive cancellations');
+  assert.equal(transport.sent.email.length, 1, 'email is the fallback for the critical event');
+});
+
+test('ntfyEnabled=false: ntfy-only user still gets email (no silent void)', async () => {
+  const transport = makeTransport();
+  await dispatch(baseArgs({
+    events: [{ type: 'delay_change', priority: 'high', title: 'ICE 145 +5min', body: '...' }],
+    userChannel: 'ntfy', transport, ntfyEnabled: false,
+  }));
+  assert.equal(transport.sent.ntfy.length, 0);
+  assert.equal(transport.sent.email.length, 1);
+});
+
 // ===== ntfy payload =====
 
 test('ntfy payload has priority+tags+topic from sender hash', async () => {

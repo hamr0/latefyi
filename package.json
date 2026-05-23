@@ -1,6 +1,6 @@
 {
   "name": "latefyi",
-  "version": "0.14.6",
+  "version": "0.15.0",
   "type": "module",
   "private": true,
   "description": "Email-driven European train tracker",
@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "hafas-client": "^6.3.4",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^8.0.7"
   }
 }

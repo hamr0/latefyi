@@ -43,6 +43,17 @@ export default {
       return;
     }
 
+    // Spoof gate: every downstream per-user action trusts `From`, so a forged
+    // sender could delete another user's tracking. Cloudflare evaluates DMARC
+    // and records the verdict in Authentication-Results. Drop on an explicit
+    // `dmarc=fail` (the From domain published a policy and this message failed
+    // alignment) so spoofed mail never wakes the VPS. The Node ingest server
+    // re-checks this as defense-in-depth (src/auth-results.js).
+    const authResults = message.headers.get('authentication-results') || '';
+    if (/\bdmarc\s*=\s*fail/i.test(authResults)) {
+      return;
+    }
+
     // Read the full raw RFC 5322 stream. We forward it as the JSON `body`
     // field; for v1 the server-side parser pulls headers (From:/To:/Trip:)
     // primarily from the email subject, so MIME-correctness of the body is

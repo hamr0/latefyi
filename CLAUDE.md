@@ -32,6 +32,8 @@ Plaintext sender lives only in `state/active/<msgid>.json` during active trackin
 
 VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `latefyi2026`. SPF / DKIM / DMARC all PASS to Gmail. Don't add HTTP routes to the Email Worker. Don't enable Cloudflare Web Analytics on Pages (the privacy claim says no analytics).
 
+**Inbound sender auth (anti-spoofing).** Every per-user action trusts `From`, so a forged sender could STOP/delete someone else's tracking. The Worker and `handleInbound` both drop mail whose `Authentication-Results` shows an explicit `dmarc=fail` (`src/auth-results.js`). Policy is conservative: reject only on `dmarc=fail` (a real domain's owner didn't send it) — absent header / `dmarc=none` / temperror pass through, so legit mail from no-DMARC domains isn't bounced. "Fail anywhere rejects" so a forged `dmarc=pass` header can't override CF's real verdict.
+
 ## Reserved email local-parts
 
 `worker/index.js` `NON_TRACKING_LOCALPARTS` (`feedback`, `postmaster`, `abuse`, `admin`, ...) drops before any processing. CF Email Routing custom rules are the primary delivery; this is defense in depth so a missing rule doesn't bounce "not a valid train number" to a real human.
@@ -57,6 +59,8 @@ VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `late
 ## Phase status
 
 Phases 1–7 are shipped and live. Allowlist is **open** to anyone. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
+
+**ntfy is fully paused** via `NTFY_ENABLED` (poll-runner; default off). While off, `dispatch` strips ntfy from *every* result — including the critical-event override that used to publish cancellations to the public, email-derivable ntfy topic regardless of user preference. To re-enable: set `NTFY_ENABLED=true` and harden the topic first (it's `latefyi-sha256(email)[:16]` — derivable by anyone who knows the address; mix in a per-user secret before un-pausing).
 
 ## Reply-To threading
 

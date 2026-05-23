@@ -16,7 +16,7 @@ pass latefyi/ssh/private_key \
   | { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; cat; echo "-----END OPENSSH PRIVATE KEY-----"; } \
   > "$KEYFILE"
 
-ssh -i "$KEYFILE" -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" \
+ssh -i "$KEYFILE" -o StrictHostKeyChecking=accept-new "${SSH_USER}@${SSH_HOST}" \
   'git config --global --add safe.directory /opt/latefyi 2>/dev/null || true
    cd /opt/latefyi
    git pull

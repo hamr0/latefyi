@@ -5,6 +5,7 @@
 
 import { writeFileSync, renameSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { senderHash } from './users.js';
 
 const DEFAULT_POLLING = {
   default_pre_t30_minutes: 30,
@@ -130,7 +131,12 @@ export function schedule({ msgid, sender, parsed, resolved, stateDir, receivedAt
   record.schedule.poll_start_time = computePollStart(resolved, opts);
   record.schedule.poll_end_time = computePollEnd(resolved, opts);
 
-  const path = join(stateDir, 'pending', `${safeFileName(msgid)}.json`);
+  // Filename = <senderHash>-<safeMsgid>.json. The sender prefix prevents one
+  // sender's crafted Message-ID from sanitizing onto another sender's filename
+  // (a cross-sender record overwrite); it also lets findRecordsForSender scope
+  // by prefix instead of parsing every file. Same sender + same msgid → same
+  // name, preserving idempotent re-scheduling (last write wins).
+  const path = join(stateDir, 'pending', `${senderHash(sender)}-${safeFileName(msgid)}.json`);
   atomicWrite(path, record);
   return { ...record, _path: path };
 }

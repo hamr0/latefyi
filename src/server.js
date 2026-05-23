@@ -16,9 +16,10 @@ import { schedule, readPending } from './schedule.js';
 import { parkDisambig, readDisambig, removeDisambig } from './disambig.js';
 import { resolveDisambiguation } from './stations.js';
 import {
-  getOrCreate, setChannel, incrementTrainCount, ntfyTopic,
-  checkRateLimit, recordRequest, DEFAULT_LIMITS,
+  getOrCreate, setChannel, incrementTrainCount, ntfyTopic, senderHash,
+  checkRateLimit, recordRequest, checkActionRateLimit, recordAction, DEFAULT_LIMITS,
 } from './users.js';
+import { senderFailsDmarc } from './auth-results.js';
 import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
@@ -32,6 +33,17 @@ const DOMAIN = 'late.fyi';
 
 function newMsgid() {
   return `<${randomBytes(8).toString('hex')}@${DOMAIN}>`;
+}
+
+// Case-insensitive header lookup. The Email Worker lowercases keys before
+// forwarding, but other ingest sources may not — don't depend on it.
+function getHeader(headers, name) {
+  if (!headers || typeof headers !== 'object') return null;
+  const want = name.toLowerCase();
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === want) return headers[k];
+  }
+  return null;
 }
 
 function isAllowlisted(sender, allowlist) {
@@ -51,15 +63,23 @@ function isDisposable(sender, disposableDomains) {
 // Scan active/+pending/ records and filter by predicate. Used for STOP scopes.
 function findRecordsForSender(stateDir, sender, predicate) {
   const matches = [];
+  const prefix = `${senderHash(sender)}-`;
   for (const sub of ['active', 'pending']) {
     const dir = join(stateDir, sub);
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir).filter(x => x.endsWith('.json'))) {
+      // Files are named <senderHash>-<msgid>.json, so skip other senders'
+      // records without reading them — keeps this O(this sender's records),
+      // not O(all active trains). Files predating the hash-prefix scheme
+      // (no `^[0-9a-f]{16}-`) are still content-checked so in-flight trips
+      // aren't orphaned across the deploy that introduced it.
+      const legacy = !/^[0-9a-f]{16}-/.test(f);
+      if (!legacy && !f.startsWith(prefix)) continue;
       const path = join(dir, f);
       let rec;
       try { rec = JSON.parse(readFileSync(path, 'utf8')); }
       catch { continue; }
-      if (rec.sender !== sender) continue;
+      if (rec.sender !== sender) continue;  // authoritative check (handles case/legacy)
       if (predicate(rec)) matches.push({ rec, path, sub });
     }
   }
@@ -296,10 +316,32 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
   if (!isAllowlisted((email.from || '').toLowerCase(), allowlist)) {
     return null;
   }
+  // Sender authentication: drop spoofed mail before it can act on (or delete)
+  // another user's records or amplify backscatter. We trust `From` for every
+  // per-user action, so a DMARC failure — the MTA telling us this domain's
+  // owner did NOT send this — must not proceed. Silent drop: the real owner
+  // didn't write it, and bouncing would backscatter to them.
+  if (senderFailsDmarc(getHeader(email.headers, 'authentication-results'))) {
+    return null;
+  }
   // Disposable inbox: friendly bounce (the sender authored the email
   // themselves — unlike the allowlist case, there's no spoofing concern).
   if (isDisposable((email.from || '').toLowerCase(), disposableDomains)) {
     return disposableSenderReply({ sender: email.from, incomingMsgid: email.msgid, ourMsgid: newMsgid() });
+  }
+
+  // Broad per-sender action limit: covers EVERY command (track/stop/list/
+  // config/reply), unlike the track-specific budget in handleTrack. Stops a
+  // single sender from amplifying backscatter or forcing repeated state scans
+  // via config/list/stop spam. Over the cap → silent drop (a reply would
+  // defeat the anti-backscatter purpose). Runs after the auth gate so only
+  // authenticated senders ever create a user record (bounds disk growth too).
+  if (email.from) {
+    const actor = getOrCreate(email.from, stateDir);
+    if (!checkActionRateLimit(actor, now, limits).allowed) {
+      return null;
+    }
+    recordAction(email.from, stateDir, now);
   }
 
   const parsed = parse(email);

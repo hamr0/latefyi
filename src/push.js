@@ -15,12 +15,26 @@ const CRITICAL_TYPES = new Set(['cancelled', 'replaced', 'terminating_short', 't
 
 // Resolve effective channels for one event under a user's stored preference.
 // Critical events always go to BOTH (PRD §6). Non-critical respects the user.
-function effectiveChannels(userChannel, event) {
-  if (CRITICAL_TYPES.has(event.type)) return new Set(['email', 'ntfy']);
-  if (userChannel === 'email') return new Set(['email']);
-  if (userChannel === 'ntfy') return new Set(['ntfy']);
-  if (userChannel === 'both') return new Set(['email', 'ntfy']);
-  return new Set(['email']);
+//
+// `ntfyEnabled` is the deployment-level kill switch. While ntfy push is paused
+// (NTFY_ENABLED unset) the poll-runner passes false, and ntfy is stripped from
+// EVERY result — including the critical-event override. Without this, the
+// critical branch silently published cancellations to the public, email-
+// derivable ntfy topic even for users pinned to email-only. Email is always a
+// valid fallback, so a disabled-ntfy critical event still reaches the user.
+function effectiveChannels(userChannel, event, ntfyEnabled = true) {
+  // Decide the intended channels, then strip ntfy if the deployment disabled
+  // it. A user pinned to ntfy-only still gets email when ntfy is off (never a
+  // silent void).
+  let set;
+  if (CRITICAL_TYPES.has(event.type)) set = new Set(['email', 'ntfy']);
+  else if (userChannel === 'ntfy')    set = new Set(['ntfy']);
+  else if (userChannel === 'both')    set = new Set(['email', 'ntfy']);
+  else                                set = new Set(['email']);
+
+  if (!ntfyEnabled) set.delete('ntfy');
+  if (set.size === 0) set.add('email'); // ntfy-only user, ntfy disabled → email fallback
+  return set;
 }
 
 // Build an ntfy POST payload. Server-side ntfy reads priority + tags as headers.
@@ -45,8 +59,8 @@ function ntfyPayload(event, topic) {
 //   ntfyTopicValue    the user's ntfy topic (derived once at the call site)
 //   transport         { sendEmail, sendNtfy }
 //
-async function deliverOne({ event, userChannel, sender, line, trainNum, trip, scheduledIso, confirmationMsgid, ntfyTopicValue, transport }) {
-  const channels = effectiveChannels(userChannel, event);
+async function deliverOne({ event, userChannel, sender, line, trainNum, trip, scheduledIso, confirmationMsgid, ntfyTopicValue, transport, ntfyEnabled = true }) {
+  const channels = effectiveChannels(userChannel, event, ntfyEnabled);
   const results = [];
 
   if (channels.has('email')) {
@@ -88,14 +102,14 @@ async function deliverOne({ event, userChannel, sender, line, trainNum, trip, sc
 // the number; the §6 fallback notice happens in Phase 6 when ntfy is wired.
 //
 export async function dispatch({ events, sender, userChannel = 'email', line, trainNum, trip, scheduledIso,
-                                 confirmationMsgid, transport, ntfyFailureCounter = 0 }) {
+                                 confirmationMsgid, transport, ntfyFailureCounter = 0, ntfyEnabled = true }) {
   const ntfyTopicValue = ntfyTopic(sender);
   const out = [];
   let ntfyFailStreak = ntfyFailureCounter;
 
   for (const event of events) {
-    const channels = effectiveChannels(userChannel, event);
-    const results = await deliverOne({ event, userChannel, sender, line, trainNum, trip, scheduledIso, confirmationMsgid, ntfyTopicValue, transport });
+    const channels = effectiveChannels(userChannel, event, ntfyEnabled);
+    const results = await deliverOne({ event, userChannel, sender, line, trainNum, trip, scheduledIso, confirmationMsgid, ntfyTopicValue, transport, ntfyEnabled });
 
     // Roll the ntfy failure streak for fallback logic (§6).
     if (channels.has('ntfy')) {

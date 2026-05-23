@@ -5,9 +5,33 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { senderHash, ntfyTopic, getOrCreate, setChannel, incrementTrainCount, recordRequest, checkRateLimit } from '../src/users.js';
+import { senderHash, ntfyTopic, getOrCreate, setChannel, incrementTrainCount, recordRequest, checkRateLimit, checkActionRateLimit, recordAction } from '../src/users.js';
 
 const td = () => mkdtempSync(join(tmpdir(), 'latefyi-users-'));
+
+// ===== broad action rate limit =====
+
+test('checkActionRateLimit: allows under cap, blocks at/over cap within the hour', () => {
+  const now = Date.now();
+  const mk = (n) => ({ recent_actions: Array.from({ length: n }, (_, i) => new Date(now - i * 1000).toISOString()) });
+  assert.equal(checkActionRateLimit(mk(2), now, { perHourActions: 3 }).allowed, true);
+  assert.equal(checkActionRateLimit(mk(3), now, { perHourActions: 3 }).allowed, false);
+});
+
+test('checkActionRateLimit: actions older than 1h are not counted', () => {
+  const now = Date.now();
+  const old = { recent_actions: Array.from({ length: 100 }, () => new Date(now - 2 * 60 * 60 * 1000).toISOString()) };
+  assert.equal(checkActionRateLimit(old, now, { perHourActions: 5 }).allowed, true);
+});
+
+test('recordAction: persists, trims to 1h window, capped at 500', () => {
+  const dir = td();
+  const now = Date.now();
+  recordAction('a@b.com', dir, now - 2 * 60 * 60 * 1000); // stale, should be trimmed next call
+  const rec = recordAction('a@b.com', dir, now);
+  assert.equal(rec.recent_actions.length, 1, 'stale entry trimmed, one fresh entry kept');
+  assert.ok(rec.recent_actions.length <= 500);
+});
 
 // ===== hash / topic =====
 

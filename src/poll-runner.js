@@ -52,7 +52,7 @@ function readJson(path) {
 //   getUserChannel?  (sender: string) → 'email'|'ntfy'|'both'
 //                  Required if transport is provided. Looks up per-user pref.
 //
-export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null, operatorEmail = null }) {
+export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null, operatorEmail = null, ntfyEnabled = false }) {
   ensureDirs(stateDir, logDir);
   const activeDir = join(stateDir, 'active');
   const pushLog = join(logDir, 'push.jsonl');
@@ -138,11 +138,13 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     const pending = (record.state?.pendingDeliveries || []);
     const eventsToSend = [...pending.map(p => p.event), ...result.events];
     if (transport && getUserChannel && eventsToSend.length > 0) {
-      // ntfy is deferred — force email regardless of stored preference so
-      // existing users with channel:'ntfy' don't fall into a silent void.
-      // Remove this override (and revert to: getUserChannel(record.sender) || 'email')
-      // when ntfy push is un-paused.
-      const userChannel = 'email';
+      // ntfy is deferred. `ntfyEnabled` (default false) is the single source of
+      // truth for the pause: dispatch strips ntfy from EVERY result, including
+      // the critical-event override that would otherwise publish cancellations
+      // to the public, email-derivable ntfy topic. To un-pause, set
+      // NTFY_ENABLED=true at the CLI — the per-user channel preference below
+      // then takes effect again.
+      const userChannel = ntfyEnabled ? (getUserChannel(record.sender) || 'email') : 'email';
       const dispatchResults = await dispatch({
         events: eventsToSend,
         sender: record.sender,
@@ -156,6 +158,7 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
         confirmationMsgid: record.confirmationMsgid,
         transport,
         ntfyFailureCounter: record.state?.ntfyFailureCounter || 0,
+        ntfyEnabled,
       });
 
       const newPending = [];
@@ -227,10 +230,10 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
 }
 
 // Long-running entry point. Calls tick() at intervalMs cadence.
-export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null, operatorEmail = null, now = null }) {
+export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null, operatorEmail = null, now = null, ntfyEnabled = false }) {
   while (!signal?.aborted) {
     try {
-      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, now: now ?? Date.now() });
+      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled, now: now ?? Date.now() });
       if (s.polled || s.events || s.terminal || s.errors) {
         console.log(`[poll-runner] ${new Date().toISOString()} polled=${s.polled} events=${s.events} terminal=${s.terminal} errors=${s.errors} skipped=${s.skipped}`);
       }
@@ -298,6 +301,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (operatorEmail) console.log(`[poll-runner] operator alerts → ${operatorEmail}`);
   else console.warn('[poll-runner] OPERATOR_EMAIL not set — dropped events will only be visible in logs');
 
+  // ntfy push is paused unless explicitly enabled. While off, NO event —
+  // including cancellations — is published to the public ntfy topic.
+  const ntfyEnabled = (process.env.NTFY_ENABLED || '').toLowerCase() === 'true';
+  console.log(`[poll-runner] ntfy push: ${ntfyEnabled ? 'ENABLED' : 'paused (NTFY_ENABLED!=true)'}`);
+
   console.log(`[poll-runner] starting; stateDir=${stateDir} logDir=${logDir}`);
-  await run({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail });
+  await run({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled });
 }

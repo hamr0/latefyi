@@ -118,6 +118,17 @@ test('msgid with shell-unsafe chars produces sanitized filename', () => {
   assert.ok(existsSync(rec._path));
 });
 
+test('cross-sender msgid collision: distinct senders never share a pending file', () => {
+  const dir = td();
+  // Two different msgids that sanitize identically ("a/b" and "a_b" → "a_b"),
+  // from two different senders. The senderHash prefix must keep them apart so
+  // one sender can't overwrite another's record with a crafted Message-ID.
+  const r1 = schedule(args({ stateDir: dir, sender: 'alice@a.tld',    msgid: '<a/b@late.fyi>' }));
+  const r2 = schedule(args({ stateDir: dir, sender: 'mallory@evil.tld', msgid: '<a_b@late.fyi>' }));
+  assert.notEqual(r1._path, r2._path);
+  assert.ok(existsSync(r1._path) && existsSync(r2._path), 'both records coexist');
+});
+
 test('idempotent: re-scheduling same msgid overwrites atomically', () => {
   const dir = td();
   const r1 = schedule(args({ stateDir: dir }));
