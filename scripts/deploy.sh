@@ -20,6 +20,12 @@ ssh -i "$KEYFILE" -o StrictHostKeyChecking=accept-new "${SSH_USER}@${SSH_HOST}" 
   'git config --global --add safe.directory /opt/latefyi 2>/dev/null || true
    cd /opt/latefyi
    git pull
+   # Install runtime deps from the lockfile when it changed (node_modules is
+   # gitignored). Without this a dependency bump — e.g. the nodemailer 6→8
+   # security upgrade — never reaches the running services. `npm ci` is
+   # deterministic (clean install from package-lock); if it fails, set -e on
+   # the local side aborts before the restart so we never run half-installed.
+   npm ci --omit=dev --no-audit --no-fund
    systemctl restart latefyi-ingest latefyi-poller
    # systemctl reports "active" the moment the unit starts; a node process
    # that crashes ~1s later (config-load EACCES, syntax error, port bind
