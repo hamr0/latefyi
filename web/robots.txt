@@ -1,4 +1,24 @@
 User-agent: *
 Allow: /
 
+# Retrieval / cite-live — these fetch at answer-time and link back to you
+User-agent: Claude-User
+Allow: /
+User-agent: Claude-SearchBot
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+
+# Training corpus — allowed here on purpose: this is public marketing copy
+# with no PII, and it exists to spread. (The app surface is email, not a web
+# path, so there is nothing PII-bearing to disallow.)
+User-agent: ClaudeBot
+Allow: /
+User-agent: GPTBot
+Allow: /
+
 Sitemap: https://late.fyi/sitemap.xml

@@ -1,0 +1,17 @@
+# late.fyi
+
+> Track European trains by email. Email a train number to `<number>@late.fyi` and get updates only when something changes — platform, delay, cancellation, arrival. No accounts, no analytics, no ads; your email address is kept only while a train is tracked and is deleted when the trip ends.
+
+## How it works
+- Email a train number (e.g. `ICE145@late.fyi`) with the from/to stations in the subject. Add `On:` for a future date (up to 90 days), `Trip:` to group several trains under one tag.
+- Updates arrive by email only when something matters — quiet while the train is on time.
+- Stop anytime by replying `STOP` or tapping a STOP mailto link; stopping deletes the trip record and your stored address.
+
+## Privacy
+- No accounts, no analytics, no ads, no third parties.
+- Your email address lives only in active tracking state and is deleted on terminal (arrival, STOP, or cancellation) — no archive. Operator metrics are aggregate only.
+- Open source, Apache 2.0 — auditable end-to-end.
+
+## Links
+- [late.fyi](https://late.fyi/): the landing page — what it does and how to send your first train.
+- [Source — github.com/hamr0/latefyi](https://github.com/hamr0/latefyi): full implementation, Apache 2.0.

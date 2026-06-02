@@ -10,6 +10,25 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.16.0 — Landing-page discoverability (2026-06-02)
+
+Closes the remaining gaps from the privacy-respecting discoverability playbook (`docs/04-process/privacy-seo.md`) on the `late.fyi` landing page. All declarative, static, open-web — no scripts, no analytics, no calls home; the privacy posture is untouched. Every machine-readable claim mirrors the page's "What we don't do" section and `CLAUDE.md`'s privacy invariant (the privacy claim is a contract).
+
+### Added
+
+- **JSON-LD** (`web/index.html`) — `SoftwareApplication` + `FAQPage` in one `@graph`. Four Q&As (no account, how to track, no analytics, how to stop) written to be lifted verbatim by an assistant. Pure `application/ld+json` — parsed, not executed; same open-web tier as `<meta>`.
+- **`web/llms.txt`** — curated agent-facing index: one-line summary, the deletion invariant up top, then links. Real URLs only (apex + GitHub) — single-page site, so no invented routes. Low-cost include; LLM-crawler adoption still partial.
+- **AI crawlers named in `robots.txt`** — retrieval/cite-live bots (`Claude-User`, `Claude-SearchBot`, `OAI-SearchBot`, `ChatGPT-User`, `PerplexityBot`) and training bots (`ClaudeBot`, `GPTBot`) all explicitly `Allow`-ed. Marketing copy with no PII, meant to spread; the app surface is email, not a web path, so nothing PII-bearing to disallow.
+
+### Changed
+
+- **`sitemap.xml`** — replaced `<changefreq>`/`<priority>` (Google ignores both) with `<lastmod>`, which it does use to prioritise recrawls.
+
+### Notes
+
+- `og:image` (1200×630 `web/og.png`) + `twitter:card: summary_large_image` were already live (2026-05-10); the playbook's stale "og-card deferred / JSON-LD skipped" note is now superseded. The landing page is all-green against the on-page audit; only Tier 3 distribution (Privacy Guides, awesome-* PRs, a philosophical post) remains, which is off-page.
+- 299 tests green (static-asset change; no code paths touched).
+
 ## 0.15.0 — Security hardening (2026-05-23)
 
 Closes the findings from a grounded security audit — each was reproduced with a PoC against the running code, then re-verified fixed. No behavior change for legitimate senders. 18 regression tests added (299 total; the 4 failures are pre-existing date-fixture staleness, unrelated).

@@ -22,6 +22,65 @@
 <meta property="og:image:alt" content="late.fyi — track European trains by email">
 
 <meta name="twitter:card" content="summary_large_image">
+
+<!-- JSON-LD: pure declarative data (parsed, not executed) so agents can lift the
+     answers verbatim. Claims mirror "What we don't do" / CLAUDE.md — keep in sync;
+     the privacy claim is a contract. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "late.fyi",
+      "url": "https://late.fyi/",
+      "applicationCategory": "TravelApplication",
+      "operatingSystem": "Email",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "isAccessibleForFree": true,
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "description": "Track European trains by email. Email a train number to <number>@late.fyi and get updates only when something changes — platform, delay, cancellation, arrival. No accounts, no analytics; your address is deleted when the trip ends."
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does late.fyi require an account?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. You email a train number to <number>@late.fyi — no signup, no app. Your email address is kept only while a train is being tracked and is deleted when the trip ends."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does late.fyi track a train?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Email the train number to <number>@late.fyi (for example ICE145@late.fyi) with the from and to stations in the subject. You get email updates only when something changes — platform, delay, cancellation, arrival — and nothing while it runs on time."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does late.fyi use analytics or tracking?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. No accounts, no analytics, no ads, no third parties. Operator metrics are aggregate only, and the project is open source and auditable end-to-end."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I stop tracking a train?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Reply STOP, or tap a STOP mailto link in any update email. Stopping ends tracking and deletes the trip record and your stored address."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
   :root {
     --bg: #0a0c10;
