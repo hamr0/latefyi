@@ -1,0 +1,8 @@
+# late.fyi security contact — RFC 9116
+# Email-driven European train tracker. The app surface is email, not a web
+# path; the only web asset is this static landing page on Cloudflare Pages.
+
+Contact: mailto:security@late.fyi
+Expires: 2027-06-03T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://late.fyi/.well-known/security.txt

@@ -10,6 +10,24 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.17.0 — Security contact & DMARC enforcement (2026-06-03)
+
+Two deliverability/security-posture changes prompted by Cloudflare's domain-security insights. No application code paths touched — a new static web asset plus a DNS policy change. The privacy posture is untouched (no analytics, no new data collected).
+
+### Added
+
+- **`web/.well-known/security.txt`** (RFC 9116) — `Contact: mailto:security@late.fyi`, `Expires: 2027-06-03`, `Canonical`, `Preferred-Languages: en`. Served static via Cloudflare Pages at `https://late.fyi/.well-known/security.txt`; the app surface is email, so there is no web path to disclose beyond the contact. **Delivery caveat:** `security` is in `worker/index.js` `NON_TRACKING_LOCALPARTS`, so the Worker drops it as defense-in-depth — a Cloudflare Email Routing rule (`security@late.fyi` → operator inbox) must exist for reports to land, otherwise the published address is a sink.
+
+### Security
+
+- **DMARC raised to enforcement.** `_dmarc.late.fyi` went `p=none` → `p=quarantine` with an explicit `sp=quarantine`. Outbound is fully aligned — VPS `155.94.144.191` is in SPF, and mail is DKIM-signed under two valid selectors (`latefyi2026` = VPS opendkim, `cf2024-1` = Cloudflare Email Routing) — so enforcement is safe with no legitimate-mail risk. Clears Cloudflare's three "DMARC Record Error detected" insights (the same single record scored against multiple checks, not three records). **Rollout:** soak `rua` aggregate reports (`postmaster@late.fyi`) ~2 weeks, then raise to `p=reject; sp=reject`. Alignment kept relaxed (`adkim=r`/`aspf=r`); no `ruf=` (forensic reports embed message samples — against the privacy posture). This is a **DNS-only** change, not in the repo — DNS/Email-Routing edits are dashboard-only by least-privilege design.
+
+### Notes
+
+- This published-policy DMARC change is distinct from the **inbound** `dmarc=fail` drop shipped in 1.15.0 (`src/auth-results.js`, §19): that rejects forged senders trying to STOP/delete others' tracking; this protects `late.fyi` itself from being spoofed at receivers elsewhere.
+- The three AI-bot insights Cloudflare also suggested (block AI bots / AI Labyrinth / Bot Fight Mode) were **declined** — they directly contradict the 0.16.0 discoverability work that deliberately invites retrieval/training crawlers, and Bot Fight Mode's JS gating cuts against the no-analytics posture.
+- Static-asset + DNS/docs change; no code paths touched, tests unaffected.
+
 ## 0.16.0 — Landing-page discoverability (2026-06-02)
 
 Closes the remaining gaps from the privacy-respecting discoverability playbook (`docs/04-process/privacy-seo.md`) on the `late.fyi` landing page. All declarative, static, open-web — no scripts, no analytics, no calls home; the privacy posture is untouched. Every machine-readable claim mirrors the page's "What we don't do" section and `CLAUDE.md`'s privacy invariant (the privacy claim is a contract).
