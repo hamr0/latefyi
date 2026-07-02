@@ -54,12 +54,18 @@ done
   echo "rendered $OUT"
 
   systemctl daemon-reload
+  # Enable the timers FIRST — they are independent of the daemons, and this
+  # step must not be skipped if the daemon restart below races the flock guard
+  # (a restart 1s after deploy.sh already restarted them can return non-zero;
+  # under set -e that used to abort the block before the timers were enabled).
+  systemctl enable --now latefyi-health.timer latefyi-stats-digest.timer
   # Kill any orphan instances (started outside systemd, before flock guard).
   pkill -f /opt/latefyi/src/poll-runner.js   2>/dev/null || true
   pkill -f /opt/latefyi/src/ingest-server.js 2>/dev/null || true
   sleep 1
-  systemctl restart latefyi-poller latefyi-ingest
-  systemctl enable --now latefyi-health.timer latefyi-stats-digest.timer
+  # Guard the restart: a transient flock race must not abort the run before the
+  # status/health report below (the is-active check is the real verdict).
+  systemctl restart latefyi-poller latefyi-ingest || echo "warn: restart returned non-zero (flock race?) — see is-active below"
   sleep 2
   echo "--- daemons ---"
   systemctl is-active latefyi-poller latefyi-ingest
