@@ -31,9 +31,13 @@ Wire two zero-dep sibling libs (`flightlog`, `pulselog`) per `hamr0/observabilit
 
 - **`logs/errors.jsonl` holds only Error name/message/stack + a static low-cardinality `where` — never a sender or trip record**, a first-class extension of the §19 invariant. The digest's flightlog rollup emails counts and group-names only. Alert/digest sender is `noreply@late.fyi` (the only address opendkim signs, selector `latefyi2026`) — verified by capturing a real `mail -r noreply@late.fyi` send, so mail is DKIM-aligned and DMARC-passing like all other outbound.
 
+### Deliverability (found during validation)
+
+- Sending a real digest to the operator surfaced a **pre-existing** block, not a regression: the shared VPS IP `155.94.144.191` (AS3130) is on Microsoft's Spamhaus feed, so alert/digest mail to `@msn/outlook/hotmail/live` hard-bounces at `MAIL FROM` (`550 5.7.1 … blocked using Spamhaus`) **despite passing SPF/DKIM/DMARC** — opendkim signed it correctly (`s=latefyi2026, d=late.fyi`); Microsoft rejects on connecting-IP reputation before it reads the signature. Also affects product mail to Microsoft-domain users. Fix is IP reputation only — Spamhaus delist requested from a role address on the rDNS domain (`abuse@addypin.com`), then Microsoft feed refresh + Sender Support/JMRP (SNDS already enrolled) — no code or DNS change. Gmail-class delivery is unaffected. See `CLAUDE.md` → "Deliverability is wired".
+
 ### Notes
 
-- Verified end-to-end before ship: a real `tick()` completing a trip wrote `trains_completed_count`, `bin/stats.js` read it, and the digest dry-run rendered the `completed` column; the health run really executed the `service` checks. 303 tests pass.
+- Verified end-to-end before ship: a real `tick()` completing a trip wrote `trains_completed_count`, `bin/stats.js` read it, and the digest dry-run rendered the `completed` column; the health run really executed the `service` checks; a real digest generated + opendkim-signed + wrote `logs/stats.jsonl`. 303 tests pass.
 
 ## 0.17.0 — Security contact & DMARC enforcement (2026-06-03)
 
