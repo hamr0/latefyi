@@ -10,6 +10,31 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.18.0 — Observability: flightlog + pulselog (2026-07-02)
+
+Wire two zero-dep sibling libs (`flightlog`, `pulselog`) per `hamr0/observability-playbook.md`. Four independent layers; 1–3 shipped, layer 4 (off-box backup/watch) parked. PRD → 1.18.0.
+
+### Added
+
+- **flightlog — in-app error capture.** `install()` runs once in each daemon's CLI block (`src/ingest-server.js`, `src/poll-runner.js`): global handlers catch uncaught exceptions (log synchronously → exit 1 for a clean systemd restart) and unhandled rejections (log, survive). `capture()` records the handled swallow points that keep a daemon alive across a fault — poll-runner tick-level catch (`where: 'poll-tick'`), operator-alert send failure (`where: 'operator-alert-send'`), and the ingest request/send catches (`where: 'ingest-request' | 'ingest-send'`). All append to `logs/errors.jsonl`. `createIngestServer`, `tick`, and `run` take an **optional** no-op `capture`/`captureError`, so behavior tests inject nothing.
+- **pulselog health — `latefyi-health.timer`, every 15 min.** `service` (poller / ingest / postfix / opendkim), `http` on ingest `/health`, `disk` (root + `/opt/latefyi`), `ssl` (`late.fyi`, `ingest.late.fyi`, warn <14d), `mailq` depth. Silent on green; one summary email to `$OPERATOR_EMAIL` on any failure. Supersedes the PRD §18 "add disk monitoring out of band" note.
+- **pulselog digest — `latefyi-stats-digest.timer`, weekly (Sun 09:00 UTC).** `bin/stats.js` prints `{users, trains, completed, active_trains, active_users}` (counts only; active users by senderHash) → pulselog appends a `kind:"stats"` line to `logs/stats.jsonl` and emails a week-over-week table + a flightlog rollup (**counts and group-names only, never messages/stacks**).
+- **`trains_completed_count`** (`state/users/<hash>.json`) — new per-user counter, "works ran" in the digest. `incrementCompletedCount()` (`src/users.js`) is bumped by the poll-runner at **both** terminal-delete sites (eviction + poll-then-terminal), symmetric to `trains_tracked_count`, counted exactly once per trip, best-effort and decoupled from the privacy-critical unlink. +8 tests (both terminal paths, no double-count, non-terminal no-op, users increment); 303 total green.
+- **Four systemd units** (`systemd/latefyi-{health,stats-digest}.{service,timer}`) and a committed **`pulselog.config.template.json`**. `scripts/install-units.sh` now installs all four units, renders `${OPERATOR_EMAIL}` from `/etc/latefyi.env` into the gitignored `/opt/latefyi/pulselog.config.json` (so `deploy.sh`'s `git pull` never clobbers it), and `enable --now`s the timers.
+
+### Changed
+
+- `flightlog` + `pulselog` added to runtime `dependencies` (both zero-dep, `node:*` only, so `npm ci --omit=dev` on the VPS installs them). `deploy.sh` unchanged — the existing `npm ci` picks them up.
+- `.gitignore` now excludes `/state/`, `/logs/`, and the rendered `/pulselog.config.json`.
+
+### Privacy
+
+- **`logs/errors.jsonl` holds only Error name/message/stack + a static low-cardinality `where` — never a sender or trip record**, a first-class extension of the §19 invariant. The digest's flightlog rollup emails counts and group-names only. Alert/digest sender is `noreply@late.fyi` (the only address opendkim signs, selector `latefyi2026`) — verified by capturing a real `mail -r noreply@late.fyi` send, so mail is DKIM-aligned and DMARC-passing like all other outbound.
+
+### Notes
+
+- Verified end-to-end before ship: a real `tick()` completing a trip wrote `trains_completed_count`, `bin/stats.js` read it, and the digest dry-run rendered the `completed` column; the health run really executed the `service` checks. 303 tests pass.
+
 ## 0.17.0 — Security contact & DMARC enforcement (2026-06-03)
 
 Two deliverability/security-posture changes prompted by Cloudflare's domain-security insights. No application code paths touched — a new static web asset plus a DNS policy change. The privacy posture is untouched (no analytics, no new data collected).
