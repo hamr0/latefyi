@@ -30,9 +30,7 @@ Plaintext sender lives only in `state/active/<msgid>.json` during active trackin
 
 ## Deliverability is wired
 
-VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `latefyi2026`. SPF / DKIM / DMARC all PASS to Gmail.
-
-**Outlook/Microsoft caveat.** Delivery to `@outlook/hotmail/msn/live` can hard-bounce at `MAIL FROM` with `550 5.7.1 … blocked using Spamhaus` — a connection-time IP-reputation block on the shared VPS IP (AS3130), evaluated *before* DKIM/DMARC (which pass). The fix is IP delisting (Spamhaus removal requested from a role address on the rDNS domain — `abuse@addypin.com` — then Microsoft's feed refresh + Sender Support/JMRP; SNDS already enrolled), **not** any auth/DNS change here. Surfaced 2026-07-02 validating the pulselog operator-alert path to an msn.com operator address. Keep a secondary signal (the `logs/*.jsonl`, the parked off-box watch) so a blocked alert isn't the only notice. Don't add HTTP routes to the Email Worker. Don't enable Cloudflare Web Analytics on Pages (the privacy claim says no analytics).
+VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `latefyi2026`. SPF / DKIM / DMARC all PASS to Gmail. **Outlook/Hotmail/msn caveat:** can hard-bounce at `MAIL FROM` (`550 … blocked using Spamhaus`) — an IP-reputation block on the shared VPS IP, independent of the (passing) auth. Fix is IP delisting, not auth/DNS; prefer a non-Microsoft operator inbox. Detail in CHANGELOG 0.18.0 / PRD §21. Don't add HTTP routes to the Email Worker. Don't enable Cloudflare Web Analytics on Pages (the privacy claim says no analytics).
 
 **Inbound sender auth (anti-spoofing).** Every per-user action trusts `From`, so a forged sender could STOP/delete someone else's tracking. The Worker and `handleInbound` both drop mail whose `Authentication-Results` shows an explicit `dmarc=fail` (`src/auth-results.js`). Policy is conservative: reject only on `dmarc=fail` (a real domain's owner didn't send it) — absent header / `dmarc=none` / temperror pass through, so legit mail from no-DMARC domains isn't bounced. "Fail anywhere rejects" so a forged `dmarc=pass` header can't override CF's real verdict.
 
