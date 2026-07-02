@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, unlink
 import { join } from 'node:path';
 import { poll, shouldPollNow, isTerminal } from './poll.js';
 import { dispatch } from './push.js';
-import { senderHash } from './users.js';
+import { senderHash, incrementCompletedCount } from './users.js';
 
 // 10 attempts × 30s minimum cadence ≈ 5 min retry window. Long enough to
 // ride out a postfix restart / nodemailer hiccup, short enough that a real
@@ -52,13 +52,22 @@ function readJson(path) {
 //   getUserChannel?  (sender: string) → 'email'|'ntfy'|'both'
 //                  Required if transport is provided. Looks up per-user pref.
 //
-export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null, operatorEmail = null, ntfyEnabled = false }) {
+export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null, operatorEmail = null, ntfyEnabled = false, capture = () => {} }) {
   ensureDirs(stateDir, logDir);
   const activeDir = join(stateDir, 'active');
   const pushLog = join(logDir, 'push.jsonl');
   const deliveryErrLog = join(logDir, 'delivery-errors.log');
 
   const summary = { polled: 0, skipped: 0, events: 0, terminal: 0, errors: 0 };
+
+  // Bump the per-user completed-trip counter as a trip ends. Best-effort and
+  // decoupled from the privacy-critical unlink (which always runs first): a
+  // counter failure must never keep a terminal record on disk.
+  const countCompleted = (rec) => {
+    if (!rec?.sender) return;
+    try { incrementCompletedCount(rec.sender, stateDir); }
+    catch (e) { console.error(`[poll-runner] completed-count failed: ${e.message}`); }
+  };
 
   let files;
   try { files = readdirSync(activeDir).filter(f => f.endsWith('.json')); }
@@ -83,6 +92,7 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // which blocks the eviction check below. Run isTerminal independently here.
     if (isTerminal(record, now)) {
       try { unlinkSync(path); } catch { /* race — fine */ }
+      countCompleted(record);
       summary.terminal++;
       continue;
     }
@@ -193,6 +203,7 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
               });
             } catch (e) {
               console.error(`[poll-runner] operator-alert SEND FAILED: ${e.message}`);
+              capture(e, { where: 'operator-alert-send' });
             }
           }
           continue;
@@ -222,6 +233,7 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // logs/push.jsonl (event audit, senderHash only).
     if (isTerminal(result.updatedRecord, now)) {
       unlinkSync(path);
+      countCompleted(record);
       summary.terminal++;
     }
   }
@@ -230,15 +242,16 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
 }
 
 // Long-running entry point. Calls tick() at intervalMs cadence.
-export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null, operatorEmail = null, now = null, ntfyEnabled = false }) {
+export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null, operatorEmail = null, now = null, ntfyEnabled = false, capture = () => {} }) {
   while (!signal?.aborted) {
     try {
-      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled, now: now ?? Date.now() });
+      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled, capture, now: now ?? Date.now() });
       if (s.polled || s.events || s.terminal || s.errors) {
         console.log(`[poll-runner] ${new Date().toISOString()} polled=${s.polled} events=${s.events} terminal=${s.terminal} errors=${s.errors} skipped=${s.skipped}`);
       }
     } catch (e) {
       console.error(`[poll-runner] tick error: ${e.message}`);
+      capture(e, { where: 'poll-tick' });
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
@@ -253,6 +266,20 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const root = join(__dirname, '..');
   const stateDir = process.env.STATE_DIR || join(root, 'state');
   const logDir   = process.env.LOG_DIR   || join(root, 'logs');
+
+  // flightlog: in-process error net. Registers global handlers (uncaught →
+  // log sync + exit 1, so systemd Restart=on-failure gets a clean restart;
+  // rejections → log + stay alive) and hands us capture() for the two
+  // swallow points below that keep the daemon alive across a broken tick.
+  // Privacy: errors.jsonl records only Error name/message/stack + a static
+  // `where` — never a sender or trip record. Don't pass user data to capture().
+  const { install } = await import('flightlog');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(logDir, { recursive: true });
+  const { capture } = install({
+    file: join(logDir, 'errors.jsonl'),
+    context: { app: 'latefyi', proc: 'poller', release: process.env.RELEASE },
+  });
 
   const profiles = {};
   for (const name of ['oebb', 'pkp']) {
@@ -307,5 +334,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(`[poll-runner] ntfy push: ${ntfyEnabled ? 'ENABLED' : 'paused (NTFY_ENABLED!=true)'}`);
 
   console.log(`[poll-runner] starting; stateDir=${stateDir} logDir=${logDir}`);
-  await run({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled });
+  await run({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled, capture });
 }

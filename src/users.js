@@ -47,6 +47,10 @@ function defaultRecord(email) {
     first_seen_at: now,
     last_seen_at: now,
     trains_tracked_count: 0,
+    // Trips that ran all the way to a terminal end (arrival / STOP / cancellation
+    // / tracking-lost). Bumped by incrementCompletedCount() from the poll-runner
+    // as the active record is deleted. Feeds the weekly "trips completed" metric.
+    trains_completed_count: 0,
     // Bounded timestamp array of fresh tracking requests in the last 24h.
     // Trimmed on every recordRequest() call. Used by checkRateLimit().
     recent_requests: [],
@@ -88,6 +92,17 @@ export function setChannel(email, channel, stateDir) {
 export function incrementTrainCount(email, stateDir) {
   const rec = getOrCreate(email, stateDir);
   rec.trains_tracked_count = (rec.trains_tracked_count || 0) + 1;
+  rec.last_seen_at = new Date().toISOString();
+  atomicWrite(userPath(stateDir, email), rec);
+  return rec;
+}
+
+// Bump completed-trip counter. Called from the poll-runner as a trip reaches a
+// terminal end and its active record is deleted. Symmetric to
+// incrementTrainCount (scheduled) — the pair gives scheduled-vs-completed.
+export function incrementCompletedCount(email, stateDir) {
+  const rec = getOrCreate(email, stateDir);
+  rec.trains_completed_count = (rec.trains_completed_count || 0) + 1;
   rec.last_seen_at = new Date().toISOString();
   atomicWrite(userPath(stateDir, email), rec);
   return rec;

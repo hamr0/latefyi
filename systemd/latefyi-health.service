@@ -1,0 +1,25 @@
+[Unit]
+Description=latefyi health check (pulselog) — services, ingest API, disk, SSL, mail queue
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=latefyi
+Group=latefyi
+WorkingDirectory=/opt/latefyi
+EnvironmentFile=/etc/latefyi.env
+# Silent on green; writes one line per failure to logs/health.jsonl and sends
+# ONE summary email to $OPERATOR_EMAIL when anything fails. Config is rendered
+# from pulselog.config.template.json by scripts/install-units.sh.
+ExecStart=/usr/bin/node node_modules/pulselog/bin/pulselog.js --config /opt/latefyi/pulselog.config.json
+Nice=10
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/latefyi
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,44 @@
+{
+  "_comment": "pulselog config for late.fyi (health + weekly digest). This is a TEMPLATE: scripts/install-units.sh renders ${OPERATOR_EMAIL} from /etc/latefyi.env into /opt/latefyi/pulselog.config.json (gitignored, so deploy.sh's git pull never clobbers it). Sender is noreply@late.fyi because opendkim only signs that address (selector latefyi2026). Health runs every 15m, digest weekly — see systemd/latefyi-health.* and systemd/latefyi-stats-digest.*.",
+
+  "output": { "file": "/opt/latefyi/logs/health.jsonl", "maxBytes": 5000000, "heartbeat": false },
+  "alert":  { "email": "${OPERATOR_EMAIL}", "from": "noreply@late.fyi", "app": "latefyi" },
+  "retry":  { "retries": 2, "retryDelayMs": 2000 },
+
+  "checks": [
+    { "type": "service", "name": "poller",   "unit": "latefyi-poller.service" },
+    { "type": "service", "name": "ingest",   "unit": "latefyi-ingest.service" },
+    { "type": "service", "name": "postfix",  "unit": "postfix.service" },
+    { "type": "service", "name": "opendkim", "unit": "opendkim.service" },
+    { "type": "http",    "name": "ingest-health", "url": "http://127.0.0.1:8787/health", "expectStatus": 200, "timeoutMs": 5000 },
+    { "type": "disk",    "name": "disk-root", "path": "/",            "maxPercent": 85 },
+    { "type": "disk",    "name": "disk-data", "path": "/opt/latefyi", "maxPercent": 85 },
+    { "type": "ssl",     "name": "cert-apex",   "host": "late.fyi",        "port": 443, "warnDays": 14 },
+    { "type": "ssl",     "name": "cert-ingest", "host": "ingest.late.fyi", "port": 443, "warnDays": 14 },
+    { "type": "command", "name": "mailq-depth", "command": "sh", "args": ["-c", "test $(mailq | grep -c '^[A-F0-9]') -lt 50"] }
+  ],
+
+  "digest": {
+    "app": "latefyi",
+    "history": "/opt/latefyi/logs/stats.jsonl",
+    "email": "${OPERATOR_EMAIL}",
+    "from": "noreply@late.fyi",
+    "weeks": 4,
+    "skipIfFlat": false,
+
+    "metricsCommand": {
+      "command": "/usr/bin/node",
+      "args": ["bin/stats.js", "--metrics-json"],
+      "timeoutMs": 10000
+    },
+    "metrics": [
+      { "name": "users" },
+      { "name": "trains" },
+      { "name": "completed" },
+      { "name": "active_trains" },
+      { "name": "active_users" }
+    ],
+
+    "flightlog": { "file": "/opt/latefyi/logs/errors.jsonl", "groupBy": "where", "flagAtLeast": 20 }
+  }
+}

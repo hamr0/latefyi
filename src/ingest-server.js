@@ -23,6 +23,7 @@ export function createIngestServer({
   transport = null,
   ingestToken,
   limits,
+  captureError = () => {},
 } = {}) {
   if (!stateDir) throw new Error('createIngestServer: stateDir required');
   if (!ingestToken) throw new Error('createIngestServer: ingestToken required');
@@ -81,6 +82,7 @@ export function createIngestServer({
         } catch (e) {
           sendError = e.message;
           console.error('[ingest] sendEmail failed:', e.message);
+          captureError(e, { where: 'ingest-send' });
         }
       }
 
@@ -88,6 +90,7 @@ export function createIngestServer({
       res.end(JSON.stringify({ ok: true, replied: !!reply, sent, sendError }));
     } catch (e) {
       console.error('[ingest] uncaught:', e);
+      captureError(e, { where: 'ingest-request' });
       try { res.writeHead(500).end('internal error'); } catch { /* socket may be closed */ }
     }
   });
@@ -105,6 +108,20 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const root = join(__dirname, '..');
 
   const stateDir = process.env.STATE_DIR || join(root, 'state');
+  const logDir   = process.env.LOG_DIR   || join(root, 'logs');
+
+  // flightlog: in-process error net. Global handlers catch uncaught throws /
+  // rejections; capture() records the two handled catch sites below. Privacy:
+  // errors.jsonl holds only Error name/message/stack + a static `where` —
+  // never the inbound sender or email body. Don't pass request data to capture().
+  const { install } = await import('flightlog');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(logDir, { recursive: true });
+  const { capture } = install({
+    file: join(logDir, 'errors.jsonl'),
+    context: { app: 'latefyi', proc: 'ingest', release: process.env.RELEASE },
+  });
+
   const port     = parseInt(process.env.INGEST_PORT || '8787', 10);
   // Default to localhost-only — the reverse proxy always lives on the same
   // host. Set INGEST_HOST=0.0.0.0 to expose directly (not recommended).
@@ -182,6 +199,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const server = createIngestServer({
     stateDir, primaryClient: profiles.oebb, fallbackClient: profiles.pkp,
     aliases, allowlist, disposableDomains, transport, ingestToken, limits,
+    captureError: capture,
   });
   server.listen(port, host, () => console.log(`[ingest] listening on ${host}:${port}`));
 }

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { senderHash, ntfyTopic, getOrCreate, setChannel, incrementTrainCount, recordRequest, checkRateLimit, checkActionRateLimit, recordAction } from '../src/users.js';
+import { senderHash, ntfyTopic, getOrCreate, setChannel, incrementTrainCount, incrementCompletedCount, recordRequest, checkRateLimit, checkActionRateLimit, recordAction } from '../src/users.js';
 
 const td = () => mkdtempSync(join(tmpdir(), 'latefyi-users-'));
 
@@ -125,6 +125,21 @@ test('incrementTrainCount bumps and persists', () => {
   // Verify on disk
   const onDisk = JSON.parse(readFileSync(join(dir, 'users', `${r2.sender_hash}.json`), 'utf8'));
   assert.equal(onDisk.trains_tracked_count, 2);
+});
+
+// ===== incrementCompletedCount =====
+
+test('incrementCompletedCount bumps and persists independently of tracked count', () => {
+  const dir = td();
+  incrementTrainCount('amr@example.com', dir);           // scheduled: 1
+  const r1 = incrementCompletedCount('amr@example.com', dir);
+  assert.equal(r1.trains_completed_count, 1);
+  assert.equal(r1.trains_tracked_count, 1);              // untouched by completed bump
+  const r2 = incrementCompletedCount('amr@example.com', dir);
+  assert.equal(r2.trains_completed_count, 2);
+
+  const onDisk = JSON.parse(readFileSync(join(dir, 'users', `${r2.sender_hash}.json`), 'utf8'));
+  assert.equal(onDisk.trains_completed_count, 2);
 });
 
 

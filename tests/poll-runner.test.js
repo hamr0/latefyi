@@ -144,6 +144,67 @@ test('tick: when shouldPollNow allows it and isTerminal, file is moved on the sa
   assert.deepEqual(readdirSync(join(stateDir, 'active')), []);
 });
 
+// ===== completed-trip counter (feeds the weekly "works ran" metric) =====
+
+// Read the single user file's counter; returns 0 if no user file exists yet.
+function completedCount(stateDir) {
+  const dir = join(stateDir, 'users');
+  const files = existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.json')) : [];
+  return files.reduce((s, f) => s + (JSON.parse(readFileSync(join(dir, f), 'utf8')).trains_completed_count || 0), 0);
+}
+
+test('tick: terminal eviction bumps the user trains_completed_count', async () => {
+  const arrivedSnap = {
+    pollTimestamp: '2026-04-29T14:02:00Z',
+    hasDeparted: true, hasArrived: true,
+    predictedArrival: '2026-04-29T14:02:00Z',
+  };
+  const rec = recordFor('m1', {
+    state: { phase: 'ACTIVE', lastPolledAt: '2026-04-29T14:00:00Z', lastPushedSnapshot: arrivedSnap, consecutivePollFailures: 0, endpointInUse: 'oebb' },
+  });
+  const { stateDir, logDir } = setup([rec]);
+  assert.equal(completedCount(stateDir), 0);
+
+  await tick({ stateDir, logDir, getClient: () => fakeClient(), now: new Date('2026-04-29T14:08:00Z').getTime() });
+
+  assert.equal(readdirSync(join(stateDir, 'active')).length, 0);
+  assert.equal(completedCount(stateDir), 1);
+});
+
+test('tick: poll-then-terminal bumps trains_completed_count exactly once', async () => {
+  const tripData = {
+    line: { name: 'ICE 145', fahrtNr: '145' },
+    stopovers: [
+      { stop: { name: 'Amsterdam Centraal' }, plannedDeparture: '2026-04-29T08:00:00Z', departure: '2026-04-29T08:00:00Z', plannedDeparturePlatform: '8b', departurePlatform: '8b' },
+      { stop: { name: 'Berlin Ostbahnhof' },   plannedArrival:   '2026-04-29T14:02:00Z', arrival: '2026-04-29T14:02:00Z', plannedArrivalPlatform: '2', arrivalPlatform: '2' },
+    ],
+  };
+  const preArrSnap = {
+    pollTimestamp: '2026-04-29T13:55:00Z',
+    hasDeparted: true, hasArrived: false,
+    predictedArrival: '2026-04-29T14:02:00Z',
+    scheduledArrival: '2026-04-29T14:02:00Z',
+  };
+  const rec = recordFor('m1', {
+    state: { phase: 'ACTIVE', lastPolledAt: '2026-04-29T13:55:00Z', lastPushedSnapshot: preArrSnap, consecutivePollFailures: 0, endpointInUse: 'oebb' },
+  });
+  const { stateDir, logDir } = setup([rec]);
+
+  await tick({ stateDir, logDir, getClient: () => fakeClient({ TRIP_ICE145: tripData }), now: new Date('2026-04-29T14:09:00Z').getTime() });
+  assert.equal(readdirSync(join(stateDir, 'active')).length, 0);
+  assert.equal(completedCount(stateDir), 1);
+
+  // A second tick with the record already gone must not re-count.
+  await tick({ stateDir, logDir, getClient: () => fakeClient({ TRIP_ICE145: tripData }), now: new Date('2026-04-29T14:10:00Z').getTime() });
+  assert.equal(completedCount(stateDir), 1);
+});
+
+test('tick: a non-terminal poll does not touch trains_completed_count', async () => {
+  const { stateDir, logDir } = setup([recordFor('m1')]);
+  await tick({ stateDir, logDir, getClient: () => fakeClient(), now: new Date('2026-04-29T07:30:00Z').getTime() });
+  assert.equal(completedCount(stateDir), 0);
+});
+
 test('push.jsonl logs senderHash, never plaintext sender', async () => {
   // Setup a record that will produce at least one event (platform changed).
   const tripDataBefore = {

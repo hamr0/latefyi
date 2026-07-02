@@ -1,0 +1,27 @@
+[Unit]
+Description=latefyi weekly stats digest (pulselog --digest) — WoW users / trains / events
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=latefyi
+Group=latefyi
+WorkingDirectory=/opt/latefyi
+# So bin/stats.js (metricsCommand) sees STATE_DIR/LOG_DIR if overridden; it
+# defaults to /opt/latefyi/state and /opt/latefyi/logs otherwise.
+EnvironmentFile=/etc/latefyi.env
+# One weekly run: collect metrics via bin/stats.js, append one kind:"stats"
+# line to logs/stats.jsonl, email a week-over-week table (+ flightlog error
+# rollup: counts and group-names only, never messages/stacks) to $OPERATOR_EMAIL.
+ExecStart=/usr/bin/node node_modules/pulselog/bin/pulselog.js --digest --config /opt/latefyi/pulselog.config.json
+Nice=10
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/latefyi
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

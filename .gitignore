@@ -1,6 +1,14 @@
 node_modules/
 *.log
 poc/logs/
+
+# Runtime state + observability logs (never commit — may hold operational data).
+/state/
+/logs/
+# pulselog config is rendered on the VPS from pulselog.config.template.json
+# (see scripts/install-units.sh); the template is committed, the rendered file
+# holds $OPERATOR_EMAIL and is not.
+/pulselog.config.json
 .env
 .env.*
 !.env.example

@@ -56,6 +56,15 @@ VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `late
 - TXT record paste in CF UI sometimes preserves newlines as `\010` bytes. Always paste single-line or fix via API.
 - The `latefyi-ingest` Worker deploys via direct CF API multipart PUT (not `wrangler deploy`) because that's how it was bootstrapped; wrangler config at `worker/wrangler.toml` is reference-only.
 
+## Observability (flightlog + pulselog)
+
+Two zero-dep sibling libs, wired per `hamr0/observability-playbook.md`.
+
+- **flightlog** (in-app error net). `install()` runs once in each daemon's CLI block (`src/ingest-server.js`, `src/poll-runner.js`) — global handlers catch uncaught throws / rejections, and `capture()` records the two swallow points that keep a daemon alive across a fault: the poll-runner tick-level catch (`where: 'poll-tick'`) + operator-alert send failure (`where: 'operator-alert-send'`), and the ingest request/send catches (`where: 'ingest-request' | 'ingest-send'`). Both write `logs/errors.jsonl`. Library functions (`createIngestServer`, `tick`/`run`) take an **optional** `captureError`/`capture` (no-op default) so tests inject nothing. **Privacy: `errors.jsonl` holds only Error name/message/stack + a static low-cardinality `where` — never a sender or trip record.** Don't pass user data to `capture()`.
+- **pulselog** (off-app watcher, systemd timers on the VPS). `latefyi-health.timer` runs `pulselog` every 15 min (services, ingest `/health`, disk, SSL, mailq — silent on green, one email on failure). `latefyi-stats-digest.timer` runs `pulselog --digest` weekly (Sun 09:00 UTC): `bin/stats.js` prints `{users,trains,completed,active_trains,active_users}` (counts only; `completed` = trips run to a terminal end via `trains_completed_count`, "works ran"; senderHash for active users), pulselog appends a `kind:"stats"` line to `logs/stats.jsonl` and emails a WoW table + a flightlog rollup (**counts and group-names only, never messages/stacks**).
+- **Config is rendered, not committed.** `pulselog.config.template.json` is committed; `scripts/install-units.sh` renders `${OPERATOR_EMAIL}` from `/etc/latefyi.env` into `/opt/latefyi/pulselog.config.json` (gitignored, so `deploy.sh`'s `git pull` never clobbers it). Sender is `noreply@late.fyi` because opendkim only signs that address. Deploy the timers with `scripts/install-units.sh` (installs all four units + renders config + `enable --now` the timers).
+- **Not yet done:** off-box backup/watch host (playbook §8) — the only layer that survives the VPS being fully down. Optional follow-up.
+
 ## Phase status
 
 Phases 1–7 are shipped and live. Allowlist is **open** to anyone. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
