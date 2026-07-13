@@ -10,6 +10,10 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent/IDE scratch gitignored and de-tracked.** `.gitignore` now default-denies every dot-directory (`.*/`), re-admitting only what ships (`.github/`). Per-machine agent/IDE state (`.claude/`, `.litectx/`, `.idea/`, …) regenerates locally and only added noise and churn; any already-committed copies are removed from tracking (local files kept on disk). Repo hygiene only.
+
 ## 0.18.0 — Observability: flightlog + pulselog (2026-07-02)
 
 Wire two zero-dep sibling libs (`flightlog`, `pulselog`) per `hamr0/observability-playbook.md`. Four independent layers; 1–3 shipped, layer 4 (off-box backup/watch) parked. PRD → 1.18.0.
