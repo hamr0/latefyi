@@ -29,3 +29,8 @@ Thumbs.db
 # chasing each new scratch dir with its own line.
 .*/
 !.github/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example

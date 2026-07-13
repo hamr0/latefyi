@@ -6,12 +6,17 @@
   "description": "Email-driven European train tracker",
   "license": "Apache-2.0",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   },
   "dependencies": {
     "flightlog": "^0.6.0",
     "hafas-client": "^6.3.4",
     "nodemailer": "^8.0.7",
     "pulselog": "^0.7.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.110.0"
   }
 }
