@@ -48,6 +48,7 @@ VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `late
 | `allowed_senders` | comma-separated; empty = open |
 | `dkim/{selector,private_key,dns_record_value}` | DKIM material |
 | `cloudflare_api` | Workers Scripts: Edit only. **DNS and Email Routing edits are dashboard-only** by design (least privilege). |
+| `origin_cert/{ingest_pem,ingest_key}` | CF Origin CA cert + key for `ingest.late.fyi` (behind the orange proxy, SSL Full strict). Lives on the VPS at `/etc/ssl/cloudflare/`; this is a **backup only** — regenerable free from the CF dashboard (SSL/TLS → Origin Server). |
 
 ## Common gotchas
 
@@ -55,6 +56,7 @@ VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `late
 - `On: <date>` rejects pure-numeric (`05/04/26` is US/EU ambiguous). ISO `2026-05-04` or named-month (`5 May 2026`) only.
 - TXT record paste in CF UI sometimes preserves newlines as `\010` bytes. Always paste single-line or fix via API.
 - The `latefyi-ingest` Worker deploys via direct CF API multipart PUT (not `wrangler deploy`) because that's how it was bootstrapped; wrangler config at `worker/wrangler.toml` is reference-only.
+- `ingest.late.fyi` is **orange-clouded** (CF proxy) with a **CF Origin cert** at `/etc/ssl/cloudflare/` under SSL Full (strict) — not grey/Let's Encrypt. The VPS firewall drops `:443` from non-Cloudflare source ranges. Don't revert it to grey or an LE/ACME cert — that re-exposes the shared origin IP and breaks the firewall lock. Real client IP comes from the box's **global** `00-cloudflare-realip.conf` (shared with the co-tenant); don't add a latefyi-local `set_real_ip_from` copy, and never edit that file from this repo (it carries the co-tenant's origin-lock block).
 
 ## Observability (flightlog + pulselog)
 

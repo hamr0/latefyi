@@ -1414,7 +1414,8 @@ sudo chmod 600 /etc/latefyi.env
 #    sudo systemctl reload caddy   (or nginx)
 
 # 7. DNS — in Cloudflare dashboard add A record:
-#    ingest.late.fyi → <vps public IP>, proxy ON or OFF (off is fine, simpler)
+#    ingest.late.fyi → <vps public IP>, proxy ON (orange) — hides origin IP + enables the
+#    :443 firewall; needs a CF Origin cert + SSL Full (strict). See cloudflare-setup.md Steps 1/7.
 
 # 8. Worker — see worker/README.md for the four wrangler secret commands and `wrangler deploy`
 
@@ -1481,9 +1482,11 @@ ingest.late.fyi {
 }
 ```
 
-`sudo caddy reload` or restart the service. Caddy auto-provisions a Let's Encrypt cert.
+`sudo caddy reload` or restart the service. **Note:** with `ingest.late.fyi` proxied (orange), the origin serves a CF Origin cert under SSL Full (strict), not Let's Encrypt — point Caddy at it with an explicit `tls /etc/ssl/cloudflare/ingest.late.fyi.pem /etc/ssl/cloudflare/ingest.late.fyi.key` directive instead of its auto-TLS. The nginx runbook in `cloudflare-setup.md` is the canonical path.
 
-For nginx, equivalent reverse_proxy block. Either way: only port 443 (and 80 for ACME) is publicly exposed; 8787 stays bound to localhost.
+For nginx, equivalent reverse_proxy block. Either way: only port 443 is publicly exposed (and the VPS firewall drops it from non-Cloudflare sources); 8787 stays bound to localhost.
+
+**Cert renewal.** The CF Origin cert is 15-year and needs no renewal. The previously-used Let's Encrypt cert is retired: HTTP-01 webroot renewal can't complete behind the orange proxy, so certbot renewal for ingest is disabled by renaming `/etc/letsencrypt/renewal/ingest.late.fyi.conf` → `.disabled` (certbot's renew loop only reads `*.conf`). The LE cert files under `/etc/letsencrypt/live/ingest.late.fyi/` are left in place but unused. A direct-served CF Origin cert would fail on a grey record (it isn't publicly trusted), so if ingest is ever reverted to grey, regenerate a Let's Encrypt cert — don't serve the Origin cert directly.
 
 ### Update the Worker
 

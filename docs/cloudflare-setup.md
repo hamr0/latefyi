@@ -38,7 +38,7 @@ Two pieces, one in each box:
 - VPS with public IP (here: `155.94.144.191` AlmaLinux 8.10), Node ≥ 20 installed
 - Outbound SMTP — Postfix on the box, or an external relay (Resend / Postmark / SES). Most providers block outbound port 25; check yours.
 - nginx (or any reverse proxy you can add a vhost to)
-- `certbot` for Let's Encrypt cert provisioning
+- A Cloudflare **Origin certificate** for `ingest.late.fyi` (generated in the dashboard — Step 7). No `certbot`/ACME: ingest is proxied, so Cloudflare terminates the public TLS and the origin serves a long-lived CF Origin cert.
 - A way to add a Cloudflare API token, OR `wrangler login` access from a browser
 
 ---
@@ -51,7 +51,7 @@ In the CF dashboard for `late.fyi`:
    - Type: `A`
    - Name: `ingest`
    - IPv4: `<VPS public IP>`
-   - Proxy status: **DNS only** (gray cloud — easier for ACME challenges and avoids CF intercepting the HTTPS handshake)
+   - Proxy status: **Proxied** (orange cloud) — hides the origin IP from public DNS and lets the VPS firewall drop `:443` from non-Cloudflare source ranges. Pairs with a CF Origin cert + SSL mode **Full (strict)** (Step 7).
    - TTL: Auto
 
 2. **Email** → **Email Routing** → **Get started**.
@@ -207,52 +207,50 @@ This activates due `pending/` records every minute, prunes `done/` after 30 days
 
 ---
 
-## Step 7 — nginx HTTPS vhost (stage 1: HTTP-only for ACME)
+## Step 7 — Cloudflare Origin certificate (dashboard)
 
-Create `/etc/nginx/conf.d/latefyi-ingest.conf` with HTTP only first, so certbot can answer the challenge:
+`ingest.late.fyi` is proxied (Step 1), so Cloudflare terminates public TLS with its own edge cert. The origin only needs a cert Cloudflare trusts on the CF→origin hop — a **CF Origin certificate** (15-year, no ACME, no renewal). This replaces certbot/Let's Encrypt entirely.
 
-```nginx
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ingest.late.fyi;
+In the CF dashboard for `late.fyi`:
 
-    location /.well-known/acme-challenge/ { root /var/www/certbot; }
-    location / { return 503 "ingest.late.fyi: waiting for TLS cert provisioning"; }
-}
-```
+1. **SSL/TLS** → **Origin Server** → **Create Certificate**
+2. Private key type: **RSA (2048)** (or ECDSA) — let Cloudflare generate it
+3. Hostnames: `ingest.late.fyi`
+4. Validity: **15 years** → **Create**
+5. Copy both blobs shown — the **Origin Certificate** (PEM) and the **Private Key** (shown once, save it now)
+6. **SSL/TLS** → **Overview** → set encryption mode to **Full (strict)** so CF validates the origin cert
+
+## Step 8 — Place the Origin cert on the VPS
 
 ```sh
-sudo nginx -t && sudo systemctl reload nginx
+sudo mkdir -p /etc/ssl/cloudflare
+
+# paste the Origin Certificate, then Ctrl-D:
+sudo tee /etc/ssl/cloudflare/ingest.late.fyi.pem >/dev/null
+# paste the Private Key, then Ctrl-D:
+sudo tee /etc/ssl/cloudflare/ingest.late.fyi.key >/dev/null
+
+sudo chmod 644 /etc/ssl/cloudflare/ingest.late.fyi.pem
+sudo chmod 600 /etc/ssl/cloudflare/ingest.late.fyi.key   # key stays unreadable to the latefyi service user
 ```
+
+The private key is operator material — it lives on the box (like any TLS key), never in the repo.
 
 ---
 
-## Step 8 — Issue cert with certbot
+## Step 9 — nginx HTTPS vhost
 
-```sh
-sudo certbot certonly --webroot -w /var/www/certbot -d ingest.late.fyi \
-  --non-interactive --agree-tos --email you@example.com --no-eff-email
-```
-
-Certs land under `/etc/letsencrypt/live/ingest.late.fyi/`. Certbot installs an auto-renewal timer.
-
----
-
-## Step 9 — nginx HTTPS vhost (stage 2: full)
-
-Replace `/etc/nginx/conf.d/latefyi-ingest.conf` with:
+Create `/etc/nginx/conf.d/latefyi-ingest.conf`:
 
 ```nginx
 limit_conn_zone $binary_remote_addr zone=latefyi_perip:10m;
 
-# HTTP → HTTPS, keep ACME path open for renewals
+# HTTP → HTTPS (Cloudflare also redirects at the edge; this covers direct hits)
 server {
     listen 80;
     listen [::]:80;
     server_name ingest.late.fyi;
 
-    location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { return 301 https://ingest.late.fyi$request_uri; }
 }
 
@@ -261,8 +259,8 @@ server {
     listen [::]:443 ssl http2;
     server_name ingest.late.fyi;
 
-    ssl_certificate     /etc/letsencrypt/live/ingest.late.fyi/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ingest.late.fyi/privkey.pem;
+    ssl_certificate     /etc/ssl/cloudflare/ingest.late.fyi.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/ingest.late.fyi.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers   HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -303,6 +301,8 @@ server {
 sudo nginx -t && sudo systemctl reload nginx
 curl -s https://ingest.late.fyi/health   # → ok
 ```
+
+> **Real client IP & the `:443` firewall.** Because ingest is proxied, every request reaches the origin from Cloudflare's ranges. The box's **global** CF real-IP config (`/etc/nginx/conf.d/00-cloudflare-realip.conf`, http-context, shared with the co-tenant on this VPS) restores the true client into `$remote_addr`, so `limit_conn` and the access log key on the real sender. **Don't add a latefyi-local `set_real_ip_from` copy** — it duplicates the CF range list and invites drift. With every vhost on the box now proxied, the origin firewall can drop `:443` from any non-Cloudflare source (applied out-of-band on the VPS), closing the raw-load path a grey-clouded origin left open. Never edit `00-cloudflare-realip.conf` from this repo — it also carries the co-tenant's origin-lock block.
 
 ---
 
@@ -626,7 +626,8 @@ Add similar rules for `postmaster@`, `abuse@`, `admin@` if you want incident rep
 | `dig` shows DKIM TXT with `\010` bytes | CF DNS UI preserved newlines from paste | Re-edit, paste single-line (use `cat /tmp/file.txt` and copy from there) |
 | `wrangler` complains about /memberships 9106 | Token lacks User Details: Read | Use template "Edit Cloudflare Workers" or bypass wrangler (steps 13–15 use raw API) |
 | Pending file written but never polled | poller service down OR cron not running | `systemctl status latefyi-poller`, `sudo -u latefyi crontab -l` |
-| ACME challenge fails | DNS not propagated yet, or proxy ON in CF (must be DNS only / gray cloud) | Wait, recheck `dig ingest.late.fyi`, ensure A record proxy is gray |
+| CF error 526 (invalid SSL cert) | Origin cert missing/expired, or SSL mode not Full (strict) | Recheck `/etc/ssl/cloudflare/ingest.late.fyi.*` + CF SSL/TLS mode; `sudo nginx -t` |
+| CF error 521/522 (origin down/unreachable) | ingest/nginx down, or `:443` firewall dropped a source that is actually current CF | `systemctl status nginx latefyi-ingest`; confirm the `:443` allow-list still covers Cloudflare's ranges |
 | `late.fyi` apex doesn't resolve | Pages "auto add CNAME" skipped on the existing zone | DNS → Add CNAME `@` → `<project>.<account>.workers.dev`, **proxied** |
 | `feedback@late.fyi` got a "not a valid train number" reply | CF Email Routing custom rule missing/disabled; catch-all caught it | Step 19 — add the custom rule (Worker drops `feedback@` defensively, but the rule is what delivers it) |
 | Local resolver shows NXDOMAIN, `@1.1.1.1` works | Negative-cache TTL on systemd-resolved | `sudo resolvectl flush-caches`, retry |
