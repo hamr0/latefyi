@@ -1,0 +1,1755 @@
+# latefyi — Product Requirements Document
+
+**Version:** 1.18.1
+**Status:** Phases 1–7 shipped and live at `late.fyi`. Allowlist is **open** to anyone (`ALLOWED_SENDERS=`). Privacy contract is literal: trip ends → address AND record both deleted, no archive. Disambiguation completion (numbered/named replies) wired end-to-end with `Reply-To` threading. Abuse limits live (10/hr, 50/day, 20 active per sender), deliverability verified PASS to Gmail (SPF/DKIM/DMARC), `On: <date>` advance planning live (up to 90 days). Landing page at `late.fyi` via Cloudflare Pages. **Routable From:** per-template (`<TRAINNUM>@`, `stop@`, `config@`, `help@`, `list@`) with display name `latefyi`. **Subject inbox-grouping signals** — `[trip]` prefix + day+date suffix always present in confirmation and per-event subjects. **`list@late.fyi`** — email any time to get a listing of all active trains. **STOP ALL / STOP TRIP** list cleared trains with dates. **Notification reliability hardened (1.14.0):** systemd is the single daemon authority (flock'd, `wake.sh` no longer spawns); failed sends are logged, retried up to 10× over ~5 min via on-record `pendingDeliveries`, and surface to `OPERATOR_EMAIL` on give-up; `logs/delivery-errors.log` mirrors every attempt. **Station-local time everywhere (1.14.0)**: HAFAS offsets are honoured per-station — `dep Monday, 2026-05-04 11:10 Amsterdam Centraal` reads as Amsterdam time by construction, no UTC label needed. **Rich change pushes (1.14.0)**: every event body opens with `<line>, <from> → <to>` and uses `> ` row markers + inline `(+Nmin)`/`(was X)` annotations. **Operator metrics**: daily snapshot (`scripts/stats.sh`) + weekly digest email (`scripts/stats-email.sh`). **Repo-tracked systemd units** (`systemd/`, `scripts/install-units.sh`) and **`scripts/vps.sh`** for one-shot VPS access. **Email format catalogue:** `docs/product/email-formats.md` (regenerated via `scripts/dump-email-samples.js`). **Disposable-inbox blocklist (1.14.1):** opt-in `BLOCK_DISPOSABLE=true`; snapshot at `config/disposable-domains.txt` (9189 domains as of the 2026-10-01 refresh), refresh with `scripts/refresh-disposable-domains.sh`. **Quarterly refresh cron (1.14.2):** root crontab runs `scripts/cron-refresh-disposable.sh` at 06:00 UTC on Jan 1 / Apr 1 / Jul 1 / Oct 1; auto-restarts `latefyi-ingest` if the snapshot changed and emails the operator with success/failure. **Mode A pickup confirmation (1.14.4):** confirmation reply branches on mode — pickup (To:-only) opens "Picking up X at Y", subject is "Pickup X — Y", and the irrelevant origin / departure-platform fields are dropped; boarding unchanged. The same release fixes the post-refresh EACCES that crashed `latefyi-ingest` after the first quarterly run (refresh script now writes 0644 + chowns to the service user when invoked by root). **Mode A push events (1.14.5):** `src/diff.js` `richBody` and per-event headlines are now mode-aware — T-30, platform_assigned, delay_change, terminating_short, and arrived all collapse to the pickup shape (no origin, no dep platform, no "? →" placeholder). Push subject date suffix anchors on arrival for Mode A so it matches the confirmation. `deploy.sh` now soaks 3 s post-restart and tails recent journalctl lines so a fast crash doesn't slip past the immediate `is-active` check. **Security hardening (1.15.0):** inbound sender authentication (drop `dmarc=fail` at Worker + `handleInbound`, `src/auth-results.js`) so a spoofed `From` can't STOP/delete another user's tracking; ntfy fully gated behind `NTFY_ENABLED` (default off) so critical events no longer publish to the public, email-derivable ntfy topic while paused; broad per-sender action limit (60/hr across all command kinds) caps backscatter amplification; pending files keyed `<senderHash>-<msgid>.json` to prevent cross-sender record overwrite and scope `findRecordsForSender` to the sender; `nodemailer` upgraded 6→8 (addressparser DoS/CVEs, `npm audit` clean). See §19. 295/299 tests pass (the 4 failures are pre-existing date-fixture staleness, unrelated). **Landing-page discoverability (1.16.0):** the `late.fyi` page now carries JSON-LD (`SoftwareApplication` + `FAQPage`, answers lifted verbatim from "What we don't do"), a curated `web/llms.txt`, explicit AI-crawler allow rules in `robots.txt` (retrieval bots `Claude-User`/`Claude-SearchBot`/`OAI-SearchBot`/`ChatGPT-User`/`PerplexityBot` + training `ClaudeBot`/`GPTBot`), and a `<lastmod>` sitemap (dropped Google-ignored `changefreq`/`priority`) — all declarative/static, every claim mirrored from the privacy invariant; the email app surface has no web path to expose. Playbook detail in `docs/wiki/privacy-seo.md`. **Security contact & DMARC enforcement (1.17.0):** `web/.well-known/security.txt` (RFC 9116) publishes `security@late.fyi`; `_dmarc.late.fyi` raised `p=none` → `p=quarantine` (`sp=quarantine`) now that outbound is fully SPF/DKIM-aligned — soaking `rua` reports before `p=reject`. Clears Cloudflare's domain-security insights; the AI-bot-blocking suggestions were declined as contrary to 1.16.0 discoverability. See §19. **Observability (1.18.0):** two zero-dep sibling libs wired per the ops playbook — `flightlog` in-app error capture (`install()` in both daemon entrypoints → `logs/errors.jsonl`, name/message/stack + static `where` only, never a sender), and `pulselog` off-app watchers on systemd timers — `latefyi-health.timer` every 15 min (services, ingest `/health`, disk, SSL, mail queue; silent on green, one email on failure) and `latefyi-stats-digest.timer` weekly (WoW `{users, trains, completed, active_trains, active_users}` via `bin/stats.js` + a flightlog counts-only rollup). New `trains_completed_count` counter ("works ran") bumped at both terminal-delete sites, symmetric to `trains_tracked_count`. Config rendered on the VPS from a committed template + `/etc/latefyi.env` (operator email never in git); sender `noreply@late.fyi` (DKIM-aligned). See §21 Observability. **pulselog mail fix (1.18.1):** both pulselog units now carry `SupplementaryGroups=postdrop` + a writable `/var/spool/postfix/maildrop`; under `NoNewPrivileges`/`ProtectSystem=strict` the setgid `postdrop` handoff failed silently, so no digest or health alert had ever been delivered.
+
+**Deferred in v1.9.0 — ntfy push notifications.** The full code path (per-user derived topic, opt-in QR/deep-link reply, push transport, fail-streak counter) is intact, but no longer surfaced in user-facing copy. Real-world testing showed that even with the designed onboarding (`CHANNELS ntfy` → reply with `ntfy://subscribe/<topic>` deep link + `https://ntfy.sh/<topic>` fallback), the deep link is dead on a fresh device (no ntfy app registered for the scheme) and the HTTPS fallback drops users into a no-push browser tab. "No extra setup, ever" is not honest until we either (a) ship a hosted PWA that owns the scheme + handles web push, or (b) replace ntfy with first-party web push. Until then: `config@late.fyi` accepts `CHANNELS ntfy` but replies "ntfy delivery is paused" and pins the user to email; confirmation/missing-context bodies omit any ntfy/CHANNELS mention.
+
+Outstanding: 30-day soak.
+
+See `CHANGELOG.md` for the full revision history. See `docs/wiki/cloudflare-setup.md` for the operator deployment runbook.
+**Owner:** Amr
+**Intended developer:** Claude (Sonnet 4.6+ recommended for implementation)
+
+---
+
+## 1. Purpose
+
+`latefyi` is a small, self-hosted, email-driven train-tracking notifier for European rail. It eliminates the pain of refreshing operator websites and station boards in unfamiliar languages by accepting a one-shot email per train and sending real-time updates (platform assignment, delays, cancellations, route changes) back to the user — by default via email, optionally via ntfy push for users who opt in.
+
+The user emails `<TRAINNUM>@late.fyi`, optionally with `From:` / `To:` headers to disambiguate intent, and receives notifications from T-30 minutes through arrival/destination.
+
+**Email is the default channel** because it works for everyone with no app install, no setup, no account. ntfy is offered as an opt-in upgrade for users who want faster, quieter, app-style push notifications. Both can run together (`both`) for redundancy.
+
+---
+
+## 2. What it is / What it is not
+
+### What it is
+- A single-purpose, email-in / notification-out tracker for European trains
+- Email-first: works for any user with just an email account
+- Self-hosted: one Cloudflare Worker + one Node.js process on a small VPS or home server
+- Multi-recipient: any allowlisted email address can use it independently with no extra setup
+- Zero telemetry, zero accounts, zero web UI
+- Operator-agnostic where HAFAS endpoints exist (SNCF, DB, SBB, ÖBB, NS, SNCB, Trenitalia, Eurostar)
+- Forgiving: parses missing/malformed input and replies with a concrete fix
+- ntfy-optional: users can opt in to push notifications; never required
+
+### What it is not
+- A ticketing or booking system
+- A journey planner (no "find me a route from X to Y")
+- A public SaaS (single instance, allowlisted senders only — but multiple users can share one instance freely)
+- A web app (no dashboard, no admin UI)
+- A replacement for operator apps (those still own ticketing, seat selection, refunds)
+- A general-purpose notification platform (one purpose: trains)
+- An aggregator/scraper of operator websites (only uses HAFAS protocol via `hafas-client`)
+- ntfy-required (ntfy is optional; email is always available)
+
+---
+
+## 3. User Experience
+
+### Primary flow (Mode B — boarding, default email channel)
+
+1. User books an SNCF ticket: RE19750, Amiens → Lille Flanders, departing 14:02
+2. User emails `RE19750@late.fyi` with `From: Amiens, To: Lille Flanders` from their allowlisted email address
+3. System replies within seconds: "Tracking RE19750, Amiens → Lille Flanders, scheduled 14:02. Updates will arrive by email starting T-30 at 13:32." A one-click `mailto:stop@late.fyi?subject=STOP%20RE19750` link is included so cancelling is a tap, not a typed reply.
+4. At 13:32, polling begins. Email update: "RE19750 — no platform yet, on time"
+5. At 13:48, platform announced. Email update (subject: "RE19750 → Platform 7"): "Platform 7 at Amiens. On time."
+6. At 13:55, delay detected. Email update: "RE19750 delayed +6min. New departure 14:08, Platform 7."
+7. After departure, polling continues. If downstream delay/disruption: email. Otherwise silent until arrival window.
+8. At Lille arrival: "RE19750 arrived at Lille Flanders, Platform 4." Tracking ends.
+
+All update emails for one tracked train share an `In-Reply-To` header so they thread together in the user's mail client — one collapsed conversation per tracked train, not a dozen scattered messages.
+
+### Secondary flow (Mode A — pickup)
+
+1. User picking up a friend on TGV 9876 arriving at Lille Flanders 16:48
+2. User emails `9876@late.fyi` with `To: Lille Flanders`
+3. System replies: "Tracking TGV 9876 arriving Lille Flanders 16:48. Updates by email starting T-30 at 16:18."
+4. Email updates: arrival platform when assigned, delays as announced, cancellation if it happens
+5. On arrival: "TGV 9876 arrived Lille Flanders, Platform 2." Tracking ends.
+
+### Optional flow (ntfy opt-in)
+
+A user who wants faster, app-style push notifications instead of (or in addition to) email:
+
+1. User emails `config@late.fyi` with subject `CHANNELS ntfy` (or `CHANNELS both`)
+2. System replies once with their personal ntfy topic URL + a QR code:
+   > Your ntfy topic: `https://ntfy.sh/latefyi-a3f9c2e1b4d8e7f2`
+   >
+   > Install the ntfy app (App Store / Play Store / F-Droid), tap +, scan the QR or paste the URL. Done.
+   >
+   > From now on, all your tracked trains will push here. Reply `CHANNELS email` to switch back.
+3. User scans QR once on their phone → ntfy app subscribes
+4. From this point forward, every tracked train for this user delivers via ntfy (or both, depending on choice). No further setup, no per-train links — one topic, all trains, lifetime.
+
+### Operator setup flow (one time, when standing up the system)
+
+1. Operator buys domain (~$10/yr at any registrar, or Cloudflare Registrar at-cost)
+2. Points domain nameservers at Cloudflare
+3. Enables Email Routing in Cloudflare dashboard
+4. Deploys Worker (`wrangler deploy`)
+5. Sets up SMTP credentials (or Cloudflare Email send) for outbound replies
+6. Allowlists permitted sender email addresses in `config.json`
+7. (Optional) Runs `setup-ntfy.sh` for own personal use
+8. Sends test email from allowlisted address; receives confirmation reply
+
+---
+
+## 4. Email Grammar (final)
+
+```
+<TRAINNUM>@late.fyi                                → need more info, reply asking
+<TRAINNUM>@late.fyi  To: <STATION>                 → Mode A: pickup at STATION
+<TRAINNUM>@late.fyi  From: <STATION>               → Mode B: board STATION, ride to terminus
+<TRAINNUM>@late.fyi  From: <X>, To: <Y>            → Mode B: board X, ride to Y
+<TRAINNUM>@late.fyi  From: <X>, To: <Y>, Trip: <T> → as above, grouped under trip "T"
+```
+
+### Rules
+
+- Local part is the train number. Required. Uppercase, alphanumeric, no whitespace. Examples: `RE19750`, `9876`, `ICE104`, `ES9114`, `TGV6201`
+- `From:`, `To:`, and `Trip:` may appear in the **email subject line** (preferred) or in the **email body's first non-empty line**. The classic form is key-colon-value, comma-separated.
+- **Header keys are case-insensitive.** `From:`, `from:`, `FROM:`, `tO:` all parse identically. Values are normalized for matching but preserved verbatim for replies.
+- **Forgiving parsing**: colons and commas are optional. The parser splits on keyword boundaries (`from` / `to` / `on` / `trip` / `channels`), so all of these work:
+  - `From: Amsterdam, To: Berlin Ostbahnhof` (classic)
+  - `from amsterdam to berlin ostbahnhof` (no colons, no commas)
+  - `from amsterdam to paris nord on 2026-05-06` (all bare)
+  - `From: Amsterdam to Berlin On: 2026-05-04` (mixed)
+- Station names are matched case-insensitively against the resolved train's stop sequence using fuzzy match (Levenshtein ≤ 2 against canonical names + known aliases).
+- `Trip:` is an optional free-text tag (alphanumeric + dash/underscore, ≤32 chars) that groups multiple per-train tracking requests for batch operations like `STOP TRIP <name>`. Trips are not validated against any list — any string the user picks works. See §7 for STOP semantics.
+- `On: <date>` is an optional advance-planning header. Accepted formats: ISO `2026-05-04`, or day-month-year with **named month** like `5 May 2026`, `5-May-2026`, `05-May-26`. Pure-numeric forms like `05/04/26` are **rejected** (US vs EU ambiguity). The date must be today or future, max 90 days ahead (HAFAS doesn't publish further). When `On:` is set, the request is resolved against that day's HAFAS data; the record sits in `state/pending/` until T-30 of the actual departure, then activates on the existing wake-up cron. When absent, HAFAS picks the nearest run (today or tomorrow).
+- Unknown headers are ignored silently. Extra body content is ignored.
+- **One train per email.** Multi-train journeys = multiple emails. The system never parses a multi-leg itinerary from a single message. Rationale: parsing booking confirmations / itinerary blobs is a maintenance black hole, and the user's *first train* is the load-bearing event for the whole chain. See §22 decision 26.
+- **Bare emails always trigger the §7 "missing context" reply.** Even if `<TRAINNUM>` resolves to exactly one train and one route, the system does not auto-pick `From:` or `To:`. Forcing explicit headers is intentional — it builds the muscle and avoids silent wrong assumptions. See §22 decision 27.
+
+### Examples
+
+```
+To: tgv9876@late.fyi
+Subject: To: Lille Flanders
+Body: (empty)
+→ Mode A, pickup at Lille Flanders
+```
+
+```
+To: RE19750@late.fyi
+Subject: From: Amiens, To: Lille Flanders
+Body: (empty)
+→ Mode B, board Amiens → Lille Flanders
+```
+
+```
+To: ICE104@late.fyi
+Subject: (empty)
+Body: From: Frankfurt Hbf
+→ Mode B, board Frankfurt Hbf → terminus
+```
+
+---
+
+## 5. Operational Modes
+
+**Both modes share the same event categories.** The difference is only the *anchor station* and the *polling window*. The unified notification taxonomy is in §9; the per-mode summary below is for routing logic, not for event-type definition.
+
+### Mode A — Pickup (`To:` only)
+
+- **Trigger:** `To:` present, `From:` absent
+- **Anchor:** the `To:` station (where the user is meeting the train)
+- **Watching:** arrival board at `To:`, plus the upstream route to detect early termination, rerouting, or replacement service
+- **Push events:** see §9. In Mode A "platform" means *arrival platform at `To:`*; "delay" means *delay propagating to `To:`'s arrival*; "terminating short" means *train ends before reaching `To:`*. Cancellation, replacement service, and mid-route disruption all apply.
+- **Polling window:** T-30 (scheduled arrival at `To:`) to actual arrival or +30 min grace
+- **Terminal state:** train arrives at `To:`, train cancelled, or +30 min past last known ETA with no data
+
+### Mode B — Boarding (`From:` present)
+
+- **Trigger:** `From:` present (with or without `To:`)
+- **Anchor:** the `From:` station (where the user is boarding)
+- **Watching:** departure board at `From:`, plus downstream stops on the route up to `To:` (or terminus if `To:` absent), to detect mid-route delay propagation, rerouting, splitting, or early termination
+- **Push events:** see §9. In Mode B "platform" applies to *both* the departure platform at `From:` AND the arrival platform at `To:`; "delay" thresholds tighten pre-departure (≥2 min) and loosen in-transit (≥5 min) per §9.
+- **Polling window:** T-30 (scheduled departure at `From:`) until arrival at `To:` (or terminus) +30 min grace
+- **Terminal state:** arrival at `To:`, cancellation, or train passes `To:` station per live data
+
+### Polling cadence by phase
+
+| Phase | Window | Frequency |
+|---|---|---|
+| Pre-T-30 | from email receipt to T-30 | Not polled (scheduler waits — see §10) |
+| Pre-anchor | T-30 to scheduled departure (Mode B) or T-30 to scheduled arrival (Mode A) | Every 30s |
+| In-transit (Mode B only) | scheduled departure to scheduled arrival at `To:` | Every 60s |
+| Arrival window | T-5 to actual arrival (both modes) | Every 30s |
+| Grace | actual arrival or +30min cutoff | Stop |
+
+Exception: large terminal stations (Paris-Nord, Gare de Lyon, Frankfurt Hbf, Roma Termini, etc. — list in `config.json`) extend pre-departure window to T-45 because they often announce later.
+
+---
+
+## 6. Notification Channels
+
+> **Deferred (v1.9.0):** ntfy is paused in user-facing copy. Effective channel is `email` for all users; `CHANNELS ntfy`/`both` requests are accepted at `config@late.fyi` but reply with a "paused" notice. The rest of this section describes the designed-and-implemented behavior, retained for the re-enable. See the **Deferred** banner at the top of this PRD for why and the conditions for un-pausing.
+
+Three channels, configurable per-user (lifetime preference) or per-request (one-shot override).
+
+### Architecture: three lifetimes
+
+The notification system layers three independent lifetimes:
+
+| Layer | Lifetime | Stored as |
+|---|---|---|
+| **Per user** | Forever (until user changes it) | `state/users/<sender_hash>.json`: channel preference, ntfy topic, allowlist entry |
+| **Per train** | One trip (T-30 to arrival + grace) | `state/active/<msgid>.json`: poll schedule, diff history, push log |
+| **Per change** | One delivery | one ntfy POST and/or one email send |
+
+This is why "track two trains in tandem" requires zero extra setup. The per-user layer is set-and-forget — one ntfy topic, one channel preference. The per-train layer is created by each tracking email and torn down on arrival, independent of every other train. The per-change layer is the actual notifications, where multiple trains' updates converge and stream out through the user's single configured channel as discrete messages.
+
+### Channel: `email` (default for all new users)
+
+- Sent from `noreply@late.fyi` via Cloudflare Email Workers `send_email` binding (or SMTP relay)
+- Subject: short status ("RE19750 → Platform 7")
+- Body: full detail (current platform, delay, scheduled times, route summary, last-update timestamp)
+- Threaded: all updates for one tracked train share `In-Reply-To` of the original confirmation reply, so the user's mail client groups them into one collapsed conversation
+- Why default: requires zero setup from the user. Anyone with email gets full functionality immediately.
+
+### Channel: `ntfy` (opt-in upgrade)
+
+- POST to `https://ntfy.sh/<TOPIC>` (or self-hosted ntfy server)
+- One topic per user, derived: `latefyi-<sha256(sender_email)[:16]>` — deterministic, stable for life
+- All trains for that user push to the same topic. Two trains updating simultaneously = two POSTs = two separate notifications on the phone, interleaved by time. ntfy does not merge or deduplicate.
+- Priority mapping:
+  - Platform assigned, platform change, cancellation → `urgent` (priority 5)
+  - Delay change → `high` (priority 4)
+  - Status updates, arrivals → `default` (priority 3)
+- Title: short ("RE19750 → Platform 7"), body: detail ("Amiens, on time, dep 14:02")
+- Tags for filtering/emoji: `train`, `<operator>`, `urgent` if applicable
+- No Click URL (no useful destination; operator deep links are unreliable)
+
+### Channel: `both`
+
+- Send to ntfy AND email simultaneously, no de-duplication
+- Recommended for: cross-border trips, infrequent users, redundancy paranoia, and as the auto-fallback when ntfy delivery fails
+
+### Channel selection logic
+
+1. **Default for new sender**: `email` only — works immediately, no setup
+2. **Opt in to ntfy**: user emails `config@late.fyi` with subject `CHANNELS ntfy` or `CHANNELS both`
+3. **Opt-in reply**: server replies once with the user's personal ntfy topic URL + QR code. This is the **only** time a topic link appears in any communication. After scanning into the ntfy app, the user never sees the URL again — every train just works.
+4. **Persistent preference**: user emails `config@late.fyi` with `CHANNELS <email|ntfy|both>` to change at any time. Server confirms the change, persists to `state/users/<sender_hash>.json`.
+5. **Per-request override**: include `Channels: both` (or `ntfy` / `email`) header in a tracking request email — applies only to that train.
+6. **Critical events override to `both`**: cancellation, full route disruption, train terminating early, replacement bus — these always send via every available channel regardless of preference. User safety beats user preference.
+
+### Fallback behavior
+
+- If ntfy POST returns non-2xx **three times in a row** for a user during one tracked train, automatically promote that request to `both` for the remainder of the trip and include in the next email: "ntfy delivery failing for this trip — also sending by email."
+- Fallback is per-request, not persistent. Next email starts fresh on the user's stored preference.
+- If user is on `email` only, ntfy failures are irrelevant — never attempted.
+
+### Multi-train delivery (clarifying example)
+
+Suppose Amr is on `CHANNELS both` and tracking three trains simultaneously:
+- RE19750 (his own ride, Amiens → Lille)
+- TGV 9876 (picking up his sister at Lille Europe)
+- ICE 104 (a friend arriving at Brussels)
+
+When all three update around the same time, his phone gets three ntfy notifications (titled by train number) AND three threaded emails (each in its own conversation). The trains are independent at the per-train layer; they converge only at delivery, where they remain visually distinct because each notification leads with the train number.
+
+Zero collision. Zero per-train configuration. Zero risk of ntfy "running out of channels" — there's only one channel, and it carries everything.
+
+---
+
+## 7. Reply Behaviors
+
+The system replies from `noreply@late.fyi` to the original sender. All replies are short, actionable, no marketing, no signature beyond `— late.fyi`.
+
+### Standard footer (every email reply)
+
+Every outbound email — confirmations, errors, updates, disambiguation prompts, STOP confirmations — ends with the same compact footer. Two purposes: it teaches the format passively over time, and it lists the STOP variants so the user always has an exit. The footer is **email-only**; ntfy push bodies stay short and skip it.
+
+```
+— late.fyi
+─────
+Format: <TRAINNUM>@late.fyi   Subject: From: <station>, To: <station>   (or just To: for pickup)
+Optional: Trip: <name>   ·   Stop via mailto: links in each email (or Subject: STOP / STOP TRIP <name> / STOP ALL to stop@late.fyi)   ·   Headers case-insensitive
+```
+
+For the rest of this section, `[FOOTER]` in templates is shorthand for this block. Implementation: append from a single string constant in `reply.js` so it's edited in one place.
+
+### STOP variants (canonical)
+
+Stops are triggered by a fresh email to `stop@late.fyi` (or any `<TRAINNUM>@late.fyi` address) with `STOP …` in the subject. The canonical UX is the **one-click `mailto:` link** embedded in every confirmation and update email — it opens a fresh compose with the right subject already filled, no typing required. Replying STOP to a confirmation is intentionally **not** parsed: client-specific attribution lines and quoted-content boundaries make it unreliable across mail clients.
+
+| Email | Effect |
+|---|---|
+| `Subject: STOP <TRAINNUM>` to `stop@late.fyi` (or `<TRAINNUM>@late.fyi`) | Stops that specific train's tracking. The mailto link in confirmation/push emails uses this form. |
+| `Subject: STOP TRIP <name>` to `stop@late.fyi` | Stops every active tracking whose `trip` field matches `<name>` (case-insensitive). One reply summarizes how many were cleared. |
+| `Subject: STOP ALL` to `stop@late.fyi` | Stops every active tracking for the sender. |
+| `Subject: STOP` to `<TRAINNUM>@late.fyi` | Bare STOP at a train-number address resolves to that train. |
+
+### Confirmation (happy path, email — ntfy paused per §6 banner)
+
+```
+From: latefyi <RE19750@late.fyi>
+Subject: Tracking RE19750 [paris-weekend] — Amiens → Lille Flanders — 2026-05-06
+
+Tracking RE19750 (TER, SNCF), Amiens → Lille Flanders.
+Scheduled: dep 14:02 Amiens, arr 14:38 Lille Flanders.
+Departure platform: TBC    Arrival platform: TBC
+Status: TBC
+Updates by email starting T-30 at 13:32.
+
+Stop tracking this train:
+  mailto:stop@late.fyi?subject=STOP%20RE19750&body=STOP%20RE19750
+
+[FOOTER]
+```
+
+**Mode A (pickup, `To:` only)** uses a different shape — the user doesn't care where the train started, only when it gets where they're meeting it:
+
+```
+From: latefyi <EUR9340@late.fyi>
+Subject: Pickup EUR9340 — Paris Nord — Monday, 2026-05-04
+
+Picking up EUR 9340 at Paris Nord.
+Scheduled arrival: Monday, 2026-05-04 14:42 Paris Nord.
+Arrival platform: TBC
+Status: TBC
+Updates by email starting T-30 at 14:12.
+
+Stop tracking this train:
+  mailto:stop@late.fyi?subject=STOP%20EUR9340&body=STOP%20EUR9340
+
+[FOOTER]
+```
+
+Origin and `Departure platform` are omitted (irrelevant to a pickup); the T-30 anchor is the *arrival* time at `To:`, not departure.
+
+**`From:` is meaningful.** Per-template routable local-parts:
+- confirmations + per-train updates: `latefyi <<TRAINNUM>@late.fyi>`
+- stop confirmations: `latefyi <stop@late.fyi>`
+- config replies: `latefyi <config@late.fyi>`
+- error / help / rate-limit / unauthorized: `latefyi <help@late.fyi>`
+
+The display name `latefyi` keeps the inbox sender clean. Critical: `noreply@` is **not used** as From: — clients that ignore Reply-To (Gmail, others) reply to From: directly, and the Cloudflare worker drops `noreply@` via `NON_TRACKING_LOCALPARTS`. Routable From: locals make Reply-STOP work as a silent fallback on top of the canonical mailto path.
+
+**Platform + Status fields use `TBC`** when not yet known (always at confirmation time for trips ≥1 day out). Operators don't assign platforms until ~30 min before departure; HAFAS doesn't surface real-time delay/status until the train is in service. Showing the fields with `TBC` placeholders in the confirmation sets the expectation of what will be filled later, rather than implying these are missing concepts.
+
+**Subject inbox-grouping signals** are conditional, never always-on:
+- `[trip]` prefix — between train and route — is rendered iff a `Trip:` tag was set on the request. Brackets follow the mailing-list convention so users parse them as tags at a glance.
+- ` — YYYY-MM-DD` suffix — at the end of the subject — is rendered iff the train date is *not* today or tomorrow. Near-term trains skip the suffix because the receipt date already shows next to the subject column in most clients; for advance-planned trips, the date is the disambiguating signal in inbox view. ISO format is unambiguous across locales and threads with the rest of our text-and-headers norm.
+- The same convention applies to per-event `pushReply` subjects (`ICE1255 +5min [austria] — 2026-05-06`) so inbox grouping stays consistent across confirmation and updates.
+
+### Confirmation (user opted in to ntfy)
+
+```
+Subject: Tracking RE19750 — Amiens → Lille Flanders
+
+Tracking RE19750 (TER, SNCF), Amiens → Lille Flanders.
+Scheduled: dep 14:02 Amiens, arr 14:38 Lille Flanders.
+Push starts T-30 at 13:32 via ntfy.
+Reply CHANNELS email to switch back.
+
+[FOOTER]
+```
+
+### ntfy opt-in reply (sent once, when user emails CHANNELS ntfy or both)
+
+```
+Subject: ntfy enabled for late.fyi
+
+Your ntfy topic: https://ntfy.sh/latefyi-a3f9c2e1b4d8e7f2
+
+Setup (one time):
+1. Install ntfy from App Store, Play Store, or F-Droid
+2. Open the app, tap +
+3. Scan the QR below or paste the URL above
+
+[QR code]
+
+From now on, every train you track will push here. Multiple trains
+in tandem? They all flow through this one topic — no extra setup,
+no extra subscriptions, ever.
+
+Reply CHANNELS email to disable ntfy. Reply CHANNELS both to keep
+both channels active.
+
+[FOOTER]
+```
+
+### Missing context
+
+```
+Subject: Need more info for RE19750
+
+Got RE19750 but I don't know what you need.
+- Reply with `To: <station>` if you're picking someone up at that station.
+- Reply with `From: <station>` (and optionally `To: <station>`) if you're boarding.
+
+Example: From: Amiens, To: Lille Flanders
+
+[FOOTER]
+```
+
+### Train not found
+
+```
+Subject: Can't find train RE19750
+
+No train matching "RE19750" found today or tomorrow.
+
+Common confusions:
+- TGV INOUI: 4 digits (e.g. 9876)
+- TER/RE: 4-5 digits, often prefixed RE/TER
+- Eurostar: prefixed EUR + 4 digits
+- ICE: prefixed ICE + 3-4 digits
+- Numbers reset daily — yesterday's RE19750 may not exist today
+
+Check your booking confirmation and resend.
+
+[FOOTER]
+```
+
+### Station not on route
+
+```
+Subject: Brussels not on RE19750's route
+
+RE19750 runs: Amiens → Arras → Douai → Lille Flanders.
+"Brussels" isn't a stop. Did you mean a different train, or did you mean
+Lille Flanders (closest match)?
+
+Reply with corrected station.
+
+[FOOTER]
+```
+
+### Ambiguous station
+
+```
+Subject: Which Lille for RE19750?
+
+"Lille" matches multiple stops on RE19750's route:
+  1. Lille Flanders
+  2. Lille Europe
+
+Reply with just the number (1 or 2), or the full name.
+
+[FOOTER]
+```
+
+See §7a for how the reply round-trip works.
+
+### Train already passed
+
+```
+Subject: RE19750 already arrived
+
+RE19750 arrived at Lille Flanders at 14:32 today. Nothing left to track.
+
+If this is for tomorrow's RE19750, resend after midnight (train numbers
+are per-day, not unique across days).
+
+[FOOTER]
+```
+
+### Unauthorized sender
+
+```
+Subject: Sender not allowlisted
+
+Email from <sender> isn't authorized for this latefyi instance.
+Add to config.json `allowed_senders` and redeploy.
+
+[FOOTER]
+```
+
+(In single-tenant deployment, this prevents the world from racking up your ntfy quota.)
+
+### STOP confirmation (single train)
+
+```
+Subject: Stopped tracking RE19750
+
+OK, no more updates for RE19750.
+
+[FOOTER]
+```
+
+### STOP TRIP confirmation
+
+```
+Subject: Stopped trip "rome"
+
+Cleared 3 trains from trip "rome":
+  - EUR 9316 (Amsterdam → Paris Nord)
+  - TGV 9523 (Paris → Milano Centrale)
+  - FR 9681 (Milano Centrale → Roma Termini)
+
+[FOOTER]
+```
+
+### STOP ALL confirmation
+
+```
+Subject: Stopped all tracking
+
+Cleared 5 active trains. No more updates until you start fresh.
+
+[FOOTER]
+```
+
+---
+
+## 7a. Disambiguation Flow
+
+Station names are commonly ambiguous ("Paris", "Brussels", "Lille", "Frankfurt"). The system handles this in two layers — first by trying to auto-resolve from context, and only falling back to a user round-trip when context isn't enough.
+
+### Layer 1 — auto-resolve from context
+
+When a user-typed station name fuzzy-matches multiple canonical stations, but **only one of those candidates appears on the resolved train's stop sequence**, take that one silently. Mention it in the confirmation reply so the user can correct it if wrong.
+
+Example:
+- User emails `EUR9310@late.fyi` with `From: Paris, To: Amsterdam`
+- Eurostar EUR9310 only stops at **Paris Nord** in the Paris area
+- System auto-resolves `Paris → Paris Nord` and confirms: "Tracking EUR9310, **Paris Nord** → Amsterdam Centraal. Reply with `STATION Paris Est` (etc.) within 24h to correct."
+
+This eliminates the round-trip for the common case where the train constrains the answer.
+
+### Layer 2 — numbered reply when truly ambiguous
+
+When the user's text matches **more than one stop on the train's route**, reply asking them to pick. Format:
+
+```
+Subject: Which Paris for TGV6611?
+
+"Paris" matches multiple stops on TGV6611's route:
+  1. Paris Gare de Lyon
+  2. Paris Bercy
+
+Reply with just the number (1 or 2), or the full name.
+— late.fyi
+```
+
+### Reply parsing (forgiving)
+
+The user's reply is matched against `state.choices` in this order:
+1. **Pure digit** (`1`, `2`, …) → index into `state.choices`. Out-of-range → re-ask.
+2. **Fuzzy station name** (Levenshtein ≤ 2 against each `state.choices[i]`) → unique match wins.
+3. **Still ambiguous** (e.g., user replied "Paris" again) → re-ask the same numbered list, increment a retry counter; after 3 retries, cancel and reply asking for a fresh email.
+4. **No match at all** → reply with the numbered list plus a note that the answer wasn't recognized.
+
+### State correlation (no tokens in body)
+
+- Original tracking request stays in `pending/<msgid>.json` with `state.phase = "AWAITING_DISAMBIGUATION"` and `state.choices = [...]` and `state.disambiguationMessageId = "<our-reply-msgid>"`.
+- The user's reply email's `In-Reply-To` header points at our disambiguation reply's `Message-ID`. Parser uses that header to find the pending request — no token needed in the email body.
+- If the reply has no `In-Reply-To` matching a pending disambiguation, treat it as a fresh email and parse normally.
+
+### Timeout
+
+- Awaiting-disambiguation requests auto-cancel **24 hours after the disambiguation reply was sent**, OR at `poll_start_time - 5 minutes` (whichever is earlier — if the train is leaving in 20 minutes, we can't wait 24 hours).
+- On timeout: send "Disambiguation timed out for `<TRAINNUM>`. Send a fresh email with a more specific station name." Move file to `done/` with `phase = "TIMED_OUT"`.
+
+### Coverage
+
+This flow applies to:
+- Origin / destination station ambiguity (the common case)
+- Train-number ambiguity from §18 ("Train 104 matches: ICE 104 and TGV 104") — uses the same numbered-reply mechanism, with `state.choices` containing operator-distinguished trains
+
+---
+
+## 8. Data Sources & Endpoint Strategy
+
+### Library
+
+`hafas-client` (npm). Wraps the HAFAS protocol used by most major European rail operators.
+
+### POC findings (2026-04-28) — endpoint strategy revised
+
+The original v1.0 PRD assumed per-country HAFAS profiles (SNCF, DB, SBB, NS, SNCB, Trenitalia, Eurostar). The POC probed every profile shipped by `hafas-client` and found:
+
+| Original assumption | Reality (verified live) |
+|---|---|
+| SNCF profile | ❌ never shipped by hafas-client |
+| SBB profile | ❌ never shipped |
+| NS profile | ❌ never shipped |
+| Trenitalia profile | ❌ never shipped |
+| Eurostar profile | ❌ never shipped |
+| DB profile | ❌ DNS dead (`reiseauskunft.bahn.de` decommissioned) |
+| SNCB profile | ❌ rejected ("Invalid client version") |
+| ÖBB profile | ✅ works, **and returns live data for stations across France, Germany, Belgium, Netherlands, Italy, Switzerland, UK, Luxembourg** |
+| PKP profile | ✅ works with comparable cross-border coverage |
+
+The ÖBB HAFAS endpoint is effectively a universal European rail query gateway. POC confirmed **live boards** at Frankfurt Hbf (ICE 1021, ICE 677, ICE 920, ICE 1272), Paris Nord (TER48535, TER47401, EUR 9303 to Amsterdam, RER E), Lille Flandres (TGV 7200 to Paris Nord, TER41901), Bruxelles Midi (IC 2021, IC 1921, IC 521), Hamburg Hbf (ICE 921, ICE 1707, ICE 1271), Roma Termini (R 20049), Zürich HB (S 5), Amsterdam Centraal (IC 2985), and London St Pancras. Every product family the system needs (TER, IC, EUR, TGV, ICE, RJ/NJ, regional, suburban) is surfaced with line name, fahrtNr, product, direction, planned/actual times, and platforms.
+
+### Endpoint configuration
+
+```json
+{
+  "primary":  "oebb",
+  "fallback": "pkp"
+}
+```
+
+That's the entire endpoint table. No per-country routing, no operator-prefix guessing.
+
+### Resolution algorithm
+
+1. Query **ÖBB** for the train using the user's `From:` station departure board (window: scheduled departure ± 30 min, or "today/tomorrow" if no time hint), match by line name + fahrtNr.
+2. If no match: retry against **PKP** with the same query.
+3. If still no match: reply with §7's "train not found" template.
+4. Once matched, fetch full trip via `client.trip(tripId)` to get the stop sequence for §7a disambiguation and §9 polling.
+
+### Fallback during polling — sticky source, no mid-trip switching (Policy A)
+
+Fallback fires **only at resolve time**. Once a trip's winning source is recorded in `state/active/<msgid>.json` (`record.resolved.endpoint`), it never changes for the lifetime of that trip.
+
+- On poll failure: retry the same source. After `MAX_CONSECUTIVE_FAILURES = 6` (`src/poll.js:109`), emit `tracking_lost`. The user can re-engage via a fresh email and may land on the other source on re-resolve.
+- No mid-trip switch to the alternate source. Rationale in the 2026-05-04 POC findings below.
+- No `disagreement.log`. Comparing sources mid-trip implies querying both each poll, which doubles request volume against free public endpoints. We do not shadow-query.
+
+Implementation: `src/poll-runner.js:95` reads `record.state?.endpointInUse || record.resolved?.endpoint || 'oebb'` per poll.
+
+### Durability risk (NEW — must be acknowledged)
+
+The system now has a **single-vendor data dependency on ÖBB's HAFAS endpoint**. PKP fallback partially mitigates but offers similar cross-border coverage from a similar third-party gateway. If both ÖBB and PKP lock down their public HAFAS gateways the way DB and SNCB did, the project breaks until alternative data sources (operator-specific REST APIs, navitia.io, Transport API, etc.) are integrated.
+
+Mitigation posture for v1:
+- Accept the risk; this is a personal-use tool, not a service we owe SLAs on.
+- §24 (future considerations) gains an item: "abstract `resolve.js` and `poll.js` behind a data-source interface so a non-HAFAS provider can be slotted in without touching the rest of the system."
+
+### POC findings (2026-05-04) — fallback policy locked, no third source
+
+A second POC re-examined (a) adding a third HAFAS source for redundancy and (b) mid-trip source switching. Three options considered for fallback policy: pre-capture all sources at resolve, race in parallel each poll, or sticky-with-resolve-time-fallback. The third won.
+
+**No viable third source.** `hafas-client` v6 ships 38 profiles; SBB is not among them. SBB's stable open API is `transport.opendata.ch`, a different protocol — wiring it would require a non-HAFAS adapter for marginal coverage gain, since ÖBB already proxies Swiss long-distance trains. The remaining hafas-client profiles (`db`, `sncb`, `cfl`, etc.) are dead per the 2026-04-28 POC or sub-regional. **Decision: stay at two sources (oebb, pkp).** Revisit only if both deteriorate simultaneously.
+
+**Mid-trip source switching is unsafe.** Live comparison on `RJ 854` (Wien Hbf → Villach Hbf) at the same moment, both sources resolving the same train independently:
+
+| Field | ÖBB | PKP |
+|---|---|---|
+| Departure delay | 120s | null |
+| `line.product` | `nationalExpress` | `high-speed-train` |
+| Stop name (sample) | `Flughafen Wien Bahnhof` | `Flughafen Wien` |
+| Cold-resolve latency | 4976ms | 716ms |
+
+PKP's realtime feed for Austrian trains is sparser than ÖBB's. If a trip running on ÖBB switched to PKP mid-trip, the next diff would see "delay cleared, stop name changed, product changed" and emit a false-positive push — indistinguishable to the user from real news. Resolve-time fallback is safe (no diff baseline yet). Mid-trip fallback is not. **`tracking_lost` after 6 consecutive failures is the correct exit; it is a clean signal, not a degraded one.**
+
+**Pre-capturing both sources' tripIds at resolve time: rejected.** TripIds are per-day and per-profile (ÖBB encodes the date as `DA#40526`; PKP's appears as a trailing `4052026` segment). Caching the fallback tripId saves ~700ms on the rare fallback, but the cache can go stale if the operator regenerates schedules between resolve-time and fallback-time — exactly when fallback is needed. The minimal alternative (re-resolve from `{trainNum, anchorStation, departureDate}` on the next source) avoids the stale-cache class of bug for negligible cost in already-degraded mode. Also fights the privacy invariant: extra cached tripIds are dead weight in 99% of `state/active/` records.
+
+### Bus tracking — explicitly out of scope
+
+Considered and rejected as a product extension:
+
+- **FlixBus / BlaBlaCar Bus** — dominant European intercity coach networks; neither exposes a public realtime API. Ride identifiers are internal booking IDs, not user-memorable numbers — no analogue to "email the train number" exists.
+- **Urban / regional buses** — fragmented per-city via GTFS-RT. Aggregators (Transitous, Navitia, EU NAP portals per Regulation 2017/1926) exist with patchy realtime coverage. The identifier problem is worse: a city bus is "line 47, departing Place X at 09:42," not a number.
+- **HAFAS bus legs** — ÖBB and PKP surface some regional bus services as multimodal results. Not excluded from query, not a deliberate target.
+
+The product premise — *user emails a number, we track it* — does not map to bus operations. Buses remain out of scope unless a different identifier mechanic emerges.
+
+---
+
+## 9. Polling Cadence & Change Detection
+
+### Notification taxonomy (canonical, applies to both modes)
+
+What gets pushed, ever, falls into exactly four categories:
+
+**Window 1 — Tracking start (instant + T-30):**
+- *Confirmation reply* — sent within seconds of the user's email arriving (§7). One email, threaded. Not subject to suppression.
+- *T-30 mandatory push* — fired at the first poll after T-30, regardless of whether anything changed. Reassures the user that tracking is live. (PRD §9 "Mandatory push at start of polling".)
+
+**Window 2 — Pre-anchor (T-30 → scheduled departure (B) or scheduled arrival (A)):**
+- Platform assigned (null → value) — urgent
+- Platform changed (value → different value) — urgent
+- Delay change ≥**2 min** at the anchor — high
+- Cancellation — urgent
+- Replacement service — urgent
+
+**Window 3 — In-transit / approach (after departure (B) or pre-arrival (A)):**
+- Arrival platform assigned at `To:` — urgent
+- Arrival platform changed at `To:` — urgent
+- Downstream delay propagating to `To:` ≥**5 min** — high
+- Train terminating before `To:` ("shorter than booked") — urgent
+- Rerouting / splitting affecting `To:` — urgent
+- Cancellation — urgent
+- Replacement service — urgent
+
+**Window 4 — Tracking end:**
+- Arrival at `To:` (or anchor for Mode A) — terminal default-priority push, ends tracking
+- Past arrival grace with no data — terminal "tracking lost" push
+
+**Mode applicability matrix:** every event in Windows 1, 3, and 4 applies to both modes. Window 2 differs only in *which* station the "platform"/"delay" applies to: in Mode B it's the user's `From:` (departure-platform-related); in Mode A it's the user's `To:` (arrival-platform-related). The thresholds and priorities are identical.
+
+**Body shape per mode (1.14.5):** push event bodies mirror the confirmation reply shape for their mode. Mode B bodies retain the boarding layout (`Tracking <line>, <from> → <to>.` headline + `Scheduled: dep ... arr ...` + dep+arr platforms). Mode A bodies collapse to pickup form (`Picking up <line> at <to>.` for the T-30 push, `<line> arrival platform: <p>, at <to>.` for platform events, `<line> arrival +Nmin, at <to>.` for delays; `Scheduled arrival: <time> <to>` line + arrival-platform field only — no origin, no dep line, no dep-platform field). Terminal events (`terminating_short`, `arrived`) drop the route tail in Mode A to avoid the tautological `<verb> X, at X` reading. Push subject's date suffix anchors on arrival for Mode A so it tracks the confirmation.
+
+**Critical-event override (§6):** cancellation, full route disruption, terminating short, replacement bus → always send via every available channel regardless of the user's stored preference.
+
+**Suppression by default:** silence is the norm. The vast majority of polls produce no push. See "Suppression" below.
+
+### Diff-based push
+
+Every poll produces a `TrainState` snapshot:
+
+```js
+{
+  trainId: "RE19750",
+  scheduledDeparture: "2026-04-28T14:02:00+02:00",
+  actualDeparture: "2026-04-28T14:08:00+02:00",
+  delayMinutes: 6,
+  platform: "7",
+  platformScheduled: null,
+  status: "on_time" | "delayed" | "cancelled" | "replaced" | "departed" | "arrived",
+  route: [
+    { station: "Amiens",     scheduledArr: null,             actualArr: null,             scheduledDep: "...", actualDep: "...", platform: "7" },
+    { station: "Arras",      scheduledArr: "...", actualArr: "...", ... },
+    ...
+  ],
+  endpoint: "sncf",
+  pollTimestamp: "2026-04-28T13:48:23+02:00"
+}
+```
+
+Push fires when diffing previous vs current snapshot reveals one of:
+
+| Change | Threshold | Priority | Modes |
+|---|---|---|---|
+| Platform null → value at anchor (`From:` for B, `To:` for A) | any | urgent | A, B |
+| Platform value → different value at anchor | any | urgent | A, B |
+| `delayMinutes` change at anchor | ≥2 min pre-anchor, ≥5 min in-transit | high | A, B |
+| `status` → cancelled | any | urgent | A, B |
+| `status` → replaced | any | urgent | A, B |
+| `status` → arrived (terminal) | terminal | default | A, B |
+| Arrival platform at `To:` null → value (Mode B post-departure) | any | urgent | B |
+| Arrival platform at `To:` changed (Mode B post-departure) | any | urgent | B |
+| Downstream delay propagating to `To:` arrival | ≥5 min | high | B |
+| Train terminating before `To:` (or before anchor for Mode A) | any | urgent | A, B |
+| Rerouting / mid-route split affecting `To:` | any | urgent | A, B |
+
+### Suppression
+
+- No push for unchanged state (avoid every-30s spam)
+- No push for delay oscillation within ±1 min of last pushed value (debounce)
+- Mandatory push at start of polling (T-30) regardless of changes — confirms tracking is live
+- Mandatory push at terminal state — confirms tracking ended cleanly
+
+---
+
+## 10. State Machine
+
+```
+┌──────────┐
+│ RECEIVED │  email arrives at Worker
+└────┬─────┘
+     │  Worker validates sender, hands to parser
+     ▼
+┌──────────┐
+│  PARSED  │  local-part → train number; subject/body → mode + stations
+└────┬─────┘
+     │  resolver looks up train via hafas-client (oebb → pkp fallback)
+     │  if station ambiguous on route AND not auto-resolvable from context:
+     ▼
+┌──────────────────────────┐
+│ AWAITING_DISAMBIGUATION  │  numbered reply sent; waiting on user pick
+└────┬─────────────────────┘
+     │  user replies (digit or station name); In-Reply-To matches
+     │  timeout: 24h after disambiguation reply, OR poll_start_time-5min
+     ▼
+┌────────────┐
+│ VALIDATED  │  train exists, route validated, stations match
+└────┬───────┘
+     │  scheduler writes pending/<msgid>.json with poll_start_time
+     │  reply confirmation sent to user
+     ▼
+┌────────────┐
+│ SCHEDULED  │  waiting for poll_start_time
+└────┬───────┘
+     │  wake.sh cron (every 1min) moves due files to active/
+     ▼
+┌──────────┐
+│  ACTIVE  │  poller daemon picks up, polls every 30-60s, diffs, pushes
+└────┬─────┘
+     │  terminal event (arrival / cancellation / past grace)
+     ▼
+┌──────┐
+│ DONE │  moved to done/<msgid>.json with final state
+└──────┘
+```
+
+Failure transitions (any state → `ERROR`):
+- HAFAS endpoint down (both ÖBB and PKP) → retry 3x → escalate to user via push: "Lost tracking for RE19750, data source unavailable"
+- Parser failure → reply with error, no state file written
+- Validator failure → reply with error, no state file written
+- Disambiguation timeout (3 retries OR 24h OR poll_start_time-5min) → move to `done/` with `phase = "TIMED_OUT"`, send timeout reply
+
+`ERROR` files moved to `errors/<msgid>.json` for inspection. No retry except where explicitly noted (HAFAS 5xx).
+
+---
+
+## 11. Architecture
+
+### Components
+
+1. **Cloudflare Email Worker** (edge): receives email, validates sender, posts JSON to Node service
+2. **Node service** (VPS or home server): parser, resolver, scheduler, poller, push dispatcher
+3. **ntfy app on phone**: subscribed to user's private topic
+4. **Cron** (`wake.sh`): activates due requests every minute
+5. **File system**: `pending/`, `active/`, `done/`, `errors/` directories as the only state store
+
+### File layout
+
+```
+latefyi/
+├── package.json              # deps: hafas-client only
+├── config/
+│   ├── config.json           # allowed_senders, ntfy server, channels default,
+│   │                         # large_terminals list, polling overrides
+│   └── endpoints.json        # operator → HAFAS profile mapping
+├── src/
+│   ├── parse.js              # email payload → {trainNum, mode, from, to, channels}
+│   ├── resolve.js            # train number → {endpoint, route, schedule, validation}
+│   ├── reply.js              # send reply emails (via Worker callback or SMTP)
+│   ├── schedule.js           # write pending/<msgid>.json with poll_start_time
+│   ├── poll.js               # active loop: hafas-client → diff → push
+│   ├── diff.js               # state comparison, decides what to push
+│   ├── push.js               # ntfy POST + email send dispatch
+│   ├── channels.js           # channel preference resolution per sender/request
+│   ├── users.js              # per-user state file CRUD, opt-in flow handler
+│   ├── stations.js           # fuzzy station name matching, alias table
+│   └── server.js             # HTTP endpoint receiving Worker callbacks
+├── scripts/
+│   ├── wake.sh               # cron-invoked: scan pending/, move due → active/
+│   ├── setup-ntfy.sh         # generate user topic + QR for operator's own use
+│   └── test-email.sh         # local parser test fixture runner
+├── worker/
+│   ├── wrangler.toml
+│   └── index.js              # Cloudflare Email Worker
+├── state/
+│   ├── users/                # per-user lifetime state (channel pref, ntfy topic)
+│   ├── pending/              # per-train, waiting for poll_start_time
+│   ├── active/               # per-train, currently being polled
+│   ├── done/                 # per-train, terminal state
+│   └── errors/               # parser/validator/runtime failures
+├── logs/
+│   ├── audit.jsonl           # one line per state transition
+│   ├── disagreement.log      # endpoint primary vs fallback diffs
+│   └── push.jsonl            # one line per push attempt (success/failure)
+└── README.md
+```
+
+### Lines of code estimate
+
+| Component | LOC |
+|---|---|
+| `parse.js` | 60 |
+| `resolve.js` | 90 |
+| `reply.js` | 60 |
+| `schedule.js` | 30 |
+| `poll.js` | 80 |
+| `diff.js` | 70 |
+| `push.js` | 60 |
+| `channels.js` | 40 |
+| `users.js` | 50 |
+| `stations.js` | 60 |
+| `server.js` | 40 |
+| `wake.sh` | 20 |
+| Worker `index.js` | 60 |
+| **Total** | **~720** |
+
+Plus configs and tests. Single dependency: `hafas-client`. (QR generation in `users.js` uses a tiny inline `qrcode-terminal` style ASCII renderer or shells out to `qrencode` if available — no extra npm dep required.)
+
+---
+
+## 12. Storage Schema
+
+### `pending/<msgid>.json` and `active/<msgid>.json`
+
+```json
+{
+  "msgid": "abc123@late.fyi",
+  "received_at": "2026-04-28T10:15:00Z",
+  "sender": "amr@example.com",
+  "request": {
+    "trainNum": "RE19750",
+    "mode": "B",
+    "from": "Amiens",
+    "to": "Lille Flanders",
+    "channels": "ntfy"
+  },
+  "resolved": {
+    "endpoint": "sncf",
+    "trainId": "SNCF:RE19750:2026-04-28",
+    "scheduledDeparture": "2026-04-28T14:02:00+02:00",
+    "scheduledArrivalAtTo": "2026-04-28T14:38:00+02:00",
+    "route": ["Amiens", "Arras", "Douai", "Lille Flanders"]
+  },
+  "schedule": {
+    "poll_start_time": "2026-04-28T13:32:00+02:00",
+    "poll_end_time": "2026-04-28T15:08:00+02:00"
+  },
+  "state": {
+    "phase": "PRE_DEPARTURE",
+    "lastPolledAt": null,
+    "lastPushedSnapshot": null,
+    "consecutivePollFailures": 0,
+    "endpointInUse": "sncf"
+  },
+  "pushes": []
+}
+```
+
+### `done/<msgid>.json`
+
+Same schema, with `state.phase = "DONE"` and `pushes` populated. Retained 30 days then auto-pruned by `wake.sh`.
+
+### `state/users/<sender_hash>.json` (per-user, lifetime)
+
+One file per allowlisted sender. Created lazily on first email from a sender, updated on `CHANNELS` reconfiguration. Hash is `sha256(sender_email)[:16]` — same derivation as the ntfy topic suffix, so the topic is implicit in the filename.
+
+```json
+{
+  "sender_hash": "a3f9c2e1b4d8e7f2",
+  "sender_email": "amr@example.com",
+  "channel": "email",
+  "ntfy_topic": "latefyi-a3f9c2e1b4d8e7f2",
+  "ntfy_opt_in_sent_at": null,
+  "first_seen_at": "2026-04-15T09:22:00Z",
+  "last_seen_at": "2026-04-28T10:15:00Z",
+  "trains_tracked_count": 12,
+  "trains_completed_count": 9
+}
+```
+
+`trains_tracked_count` counts trips ever *scheduled* (bumped on each track request); `trains_completed_count` counts trips that ran to a *terminal* end — arrival / STOP / cancellation / tracking-lost — bumped by the poll-runner at both delete sites as the active record is unlinked. The pair feeds the weekly digest's growth metrics (scheduled vs. "works ran"); see §21 Observability.
+
+When user emails `CHANNELS ntfy` or `CHANNELS both`:
+- Update `channel`
+- If `ntfy_opt_in_sent_at` is null: send the QR/URL opt-in reply (see §7), set `ntfy_opt_in_sent_at = now`
+- If already set: just confirm the channel change, don't resend the QR (they already have it)
+
+When user emails `CHANNELS email`:
+- Update `channel = "email"`
+- ntfy topic remains in the file (so re-opting back in is instant, no fresh QR needed unless they ask)
+
+### Why files, not a database
+
+- Bare-suite aesthetic: zero deps, debuggable with `cat` and `ls`
+- Modest scale: handful of users, dozens of concurrent active trains at most
+- Crash-safe: filesystem rename is atomic
+- Backup: `tar czf backup.tgz state/`
+- Per-user files separate cleanly from per-train files — independent lifetimes, independent storage
+
+---
+
+## 13. Component Specifications
+
+### 13.1 `parse.js`
+
+**Input:** raw email JSON from Worker callback (`{from, to, subject, body, msgid, headers}`)
+
+**Output:** one of `{kind: "track", trainNum, mode, from, to, trip, channels}`, `{kind: "stop", scope, target}`, `{kind: "config", channel}`, `{kind: "disambiguation_reply", inReplyTo, answer}`, or `ParseError`.
+
+**Logic:**
+1. **Reserved local-parts first.** If `to` local-part is a reserved keyword (`config`, `stop`, `help`), route to the matching handler before applying the train-number regex. Otherwise fall through to step 2.
+2. **Disambiguation reply check.** If the email's `In-Reply-To` header matches a known `state.disambiguationMessageId` of a pending request, return `{kind: "disambiguation_reply", inReplyTo, answer}` where `answer` is the stripped first non-empty body line. (See §7a.)
+3. **STOP detection.** If the body or subject begins with `STOP` (case-insensitive), parse the variant: `STOP` alone, `STOP <TRAINNUM>`, `STOP TRIP <name>`, `STOP ALL`. Return `{kind: "stop", scope, target}`.
+4. **Train-number extraction.** Take the local-part of `to`. Uppercase. Validate against `/^[A-Z]{0,4}\d{2,5}$/`. Reject otherwise with `ParseError("invalid_trainnum")`.
+5. **Header extraction.** Combine subject + first non-empty body line. Match `/(from|to|trip|channels):\s*([^,\n]+)/gi` — keys case-insensitive, values trimmed and preserved verbatim.
+6. **Mode determination.** `from` present → `B` (boarding); only `to` present → `A` (pickup); neither → `MISSING` → §7 missing-context reply. **Never** auto-pick `from`/`to` from the train's route, even if it's unambiguous (decision §22-27).
+7. **Trip validation.** If `trip` present, validate against `/^[A-Za-z0-9_-]{1,32}$/`. Invalid → reply asking for a corrected tag. Empty/missing → null.
+8. **Channels resolution.** Default to user's stored preference from `state/users/<sender_hash>.json`, or `email` if no user record yet. Per-request `Channels:` header overrides for this train only.
+9. Return parsed object.
+
+### 13.2 `resolve.js`
+
+**Input:** parsed object
+
+**Output:** `{endpoint, trainId, route, schedule, validation, disambiguationNeeded?}` or `ResolveError`
+
+**Logic:**
+1. Resolve `from` station via ÖBB `client.locations()` to get a station ID. (If `from` is missing — Mode A — start from `to` instead.)
+2. Query ÖBB `client.departures(stationId, { duration: 90 })` for the window covering the user's intended trip (default: now → +24h; narrowed if user provided times).
+3. Match against the user's train number: compare against `line.fahrtNr` and the trailing digits of `line.name`. Accept first exact match.
+4. If no match on ÖBB: repeat steps 1-3 against PKP.
+5. If still no match: return `ResolveError("train not found")` → §7 reply.
+6. On match, call `client.trip(tripId)` to get full stop sequence.
+7. Validate `from` and `to` against the stop sequence using `stations.js`. For each:
+   - Unique route stop matching → resolved.
+   - Multiple route stops match the user's text (e.g., "Paris" matches both Paris Nord and Paris Bercy on route) → set `disambiguationNeeded` for that field, attach the candidate list. Caller (`server.js`) sends the §7a numbered reply and parks the request in `AWAITING_DISAMBIGUATION`.
+   - No route stops match → return `ResolveError("station not on route")` → §7 reply with route summary.
+8. Return resolved data with `endpoint` recorded so the poller starts on the same source.
+
+No operator-prefix guessing. No per-country routing. ÖBB is the single primary; PKP is the single fallback.
+
+### 13.3 `stations.js`
+
+**Input:** user-typed station name + canonical route stop list
+
+**Output:** matched canonical name or `null` (with suggested alternatives)
+
+**Logic:**
+1. Normalize: lowercase, strip punctuation, collapse whitespace, transliterate accents
+2. Exact match first
+3. Alias table lookup (e.g., "Paris Nord" → "Paris Gare du Nord", "Lille" → ambiguous between "Lille Flanders" and "Lille Europe")
+4. Levenshtein distance ≤ 2
+5. Return best match if unambiguous, list of candidates if ambiguous, null if no match
+
+Alias table maintained in `config/aliases.json`, seeded with common cases, extensible.
+
+### 13.4 `schedule.js`
+
+**Input:** resolved object
+
+**Output:** writes `pending/<msgid>.json`, returns confirmation data for reply
+
+**Logic:**
+1. Compute `poll_start_time = scheduledDeparture - 30min` (or -45min for large terminals from `config.json`)
+2. Compute `poll_end_time` per Mode A/B rules
+3. Atomic write: write to `pending/<msgid>.json.tmp`, rename to `.json`
+4. Return data for reply
+
+### 13.5 `poll.js`
+
+**Input:** an `active/<msgid>.json` file
+
+**Output:** updates same file in place, dispatches pushes, eventually moves to `done/`
+
+**Logic:**
+```
+loop:
+  load active/<msgid>.json
+  call hafas-client for current train state
+  if endpoint failure:
+    increment consecutivePollFailures
+    if >= 3: switch to fallback endpoint
+    if >= 6: emit "tracking lost" push, move to errors/
+    continue with backoff
+  build TrainState snapshot
+  diff against state.lastPushedSnapshot
+  if changes: push.js dispatch
+  update state.lastPushedSnapshot, state.lastPolledAt
+  atomic write
+  if terminal: move to done/, exit
+  sleep per cadence rules
+```
+
+### 13.6 `diff.js`
+
+Pure function: `(prev: TrainState, curr: TrainState) → PushEvent[]`
+
+Each `PushEvent`: `{type, priority, title, body, tags}`
+
+### 13.7 `push.js`
+
+**Input:** `(channelPref, topic, email, pushEvent[])`
+
+**Logic:**
+1. For each event:
+   - If `channelPref` includes `ntfy`: POST to ntfy server, log result
+   - If `channelPref` includes `email` OR event is critical: send email, log result
+   - On 3 consecutive ntfy failures for this request: promote to `both` for the rest of the trip, send notice in next email
+2. Append to `logs/push.jsonl`
+
+### 13.7a `users.js`
+
+**Responsibility:** per-user state (channel preference, ntfy topic, opt-in tracking).
+
+**Functions:**
+- `getOrCreate(senderEmail) → UserRecord`: load `state/users/<hash>.json`, create with defaults if absent (`channel: "email"`, `ntfy_topic` derived but not yet "active")
+- `setChannel(senderEmail, channel) → {wasFirstNtfyOptIn: boolean}`: update channel field, return whether this is the first time the user opted into ntfy (triggers QR reply)
+- `getNtfyTopic(senderEmail) → string`: deterministic, doesn't require existing user record
+- `incrementTrainCount(senderEmail)`: bump `trains_tracked_count`, update `last_seen_at`
+
+**Atomic writes:** all updates write to `<file>.tmp` then rename. No locking needed at this scale.
+
+### 13.8 `wake.sh`
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+NOW=$(date -u +%s)
+
+# Activate due pending requests
+for f in state/pending/*.json; do
+  [ -e "$f" ] || continue
+  POLL_START=$(jq -r '.schedule.poll_start_time' "$f")
+  POLL_START_TS=$(date -u -d "$POLL_START" +%s)
+  if [ "$POLL_START_TS" -le "$NOW" ]; then
+    mv "$f" "state/active/$(basename "$f")"
+    echo "Activated: $(basename "$f")" >> logs/audit.jsonl
+  fi
+done
+
+# Prune done/ older than 30 days
+find state/done -name "*.json" -mtime +30 -delete
+
+# Ensure poller is running
+if ! pgrep -f "node src/poll-runner.js" > /dev/null; then
+  nohup node src/poll-runner.js >> logs/poller.log 2>&1 &
+fi
+```
+
+Crontab: `* * * * * /opt/latefyi/scripts/wake.sh`
+
+### 13.9 `worker/index.js` (Cloudflare Email Worker)
+
+```js
+export default {
+  async email(message, env, ctx) {
+    const allowedSenders = env.ALLOWED_SENDERS.split(',');
+    if (!allowedSenders.includes(message.from)) {
+      // Silent drop; do not bounce (avoids backscatter to spoofed senders)
+      return;
+    }
+
+    const body = await new Response(message.raw).text();
+    const subject = message.headers.get('subject') || '';
+
+    const payload = {
+      msgid: message.headers.get('message-id'),
+      from: message.from,
+      to: message.to,
+      subject,
+      body,
+      receivedAt: new Date().toISOString(),
+    };
+
+    const resp = await fetch(env.LATEFYI_INGEST_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.LATEFYI_INGEST_TOKEN}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      console.error('Ingest failed', resp.status);
+    }
+  }
+};
+```
+
+`wrangler.toml` configures the email route `*@late.fyi → this worker` and the secrets `ALLOWED_SENDERS`, `LATEFYI_INGEST_URL`, `LATEFYI_INGEST_TOKEN`.
+
+---
+
+## 14. Cloudflare Worker setup
+
+### Steps for the developer
+
+1. `npm install -g wrangler`
+2. `wrangler login`
+3. Create Worker: `wrangler init worker`
+4. Set secrets:
+   ```
+   wrangler secret put ALLOWED_SENDERS    # comma-separated list
+   wrangler secret put LATEFYI_INGEST_URL # https://<your-vps>/ingest
+   wrangler secret put LATEFYI_INGEST_TOKEN # random 32-byte hex
+   ```
+5. Deploy: `wrangler deploy`
+6. In Cloudflare dashboard → Email → Email Routing → Routing Rules:
+   - Catch-all rule: `*@late.fyi` → "Send to a Worker" → select deployed worker
+7. Verify by sending test email; check Worker logs in dashboard
+
+### Why edge Worker for ingest
+
+- Email Routing requires a Cloudflare-side handler (Worker or forward-to-address)
+- A Worker lets us validate sender at the edge before ever waking the VPS
+- Free tier covers 100k requests/day, vastly more than personal use will need
+
+---
+
+## 15. Domain & DNS setup
+
+### Steps
+
+1. Buy domain at any registrar (Cloudflare Registrar at-cost recommended; Namecheap, Porkbun fine alternatives)
+2. In Cloudflare dashboard, add the site (free plan)
+3. Cloudflare gives you two nameservers (e.g., `ns1.cloudflare.com`, `ns2.cloudflare.com`)
+4. At registrar, change nameservers to those two values. Propagation: minutes to 24 hours.
+5. In Cloudflare → Email → Email Routing → Enable. This auto-adds the required MX, SPF, DKIM, DMARC records.
+6. Verify DNS propagation: `dig MX late.fyi +short` should return Cloudflare's mail servers.
+
+No paid Cloudflare plan required. Workers free tier and Email Routing free tier are both sufficient.
+
+---
+
+## 16. ntfy setup
+
+ntfy is **opt-in per user**. The operator does not need to set up ntfy at all if no users want it. Email works for everyone out of the box.
+
+### How a user opts in
+
+1. User emails `config@late.fyi` with subject `CHANNELS ntfy` or `CHANNELS both`
+2. `users.js` updates their `state/users/<sender_hash>.json`, sets `channel`, and (if first time) triggers an opt-in reply email containing:
+   - Their personal ntfy topic URL (deterministic: `latefyi-<sha256(email)[:16]>`)
+   - A QR code (rendered in HTML email body) for one-tap mobile subscription
+   - Brief setup instructions (install app, scan QR, done)
+3. User installs the ntfy app, scans the QR or pastes the URL → subscribed
+4. From this point, every train this user tracks pushes to that topic. Lifetime. No further setup ever.
+
+### Server-side ntfy options
+
+**Option A: Public ntfy.sh (zero operator infra)**
+- POST directly to `https://ntfy.sh/<topic>`
+- Topics are unguessable (16 hex chars from sha256), effectively private
+- Free, rate-limited, operated as a public service
+- Use this unless you have a privacy reason not to
+
+**Option B: Self-hosted ntfy (full control)**
+- Run `ntfy serve` on the VPS (single Go binary, no deps)
+- Set `ntfy.base_url` in `config.json` to the self-hosted domain
+- Use access tokens via `ntfy.auth_token` for true privacy
+- Same ntfy app supports custom servers — users still subscribe via QR/URL identically
+- Adds one process to operate, eliminates external dependency
+
+Recommendation: start with Option A, migrate to B if usage grows or privacy demands warrant it.
+
+### `setup-ntfy.sh` (operator's own use)
+
+```bash
+./scripts/setup-ntfy.sh amr@example.com
+# → Topic: latefyi-a3f9c2e1b4d8e7f2
+# → Subscribe URL: https://ntfy.sh/latefyi-a3f9c2e1b4d8e7f2
+# → QR code printed to terminal
+```
+
+This bypasses the email opt-in flow for the operator's own setup convenience. Equivalent to emailing yourself `CHANNELS ntfy` and reading the reply, but useful during initial deployment when you may not yet have outbound email working.
+
+The topic is `sha256(sender_email)[:16]` so it's reproducible without storing state — running the script again any time produces the same topic.
+
+---
+
+## 17. Configuration
+
+### `config/config.json`
+
+```json
+{
+  "allowed_senders": ["amr@example.com", "friend@example.com"],
+  "default_channel": "email",
+  "ntfy": {
+    "base_url": "https://ntfy.sh",
+    "auth_token": null,
+    "topic_prefix": "latefyi-"
+  },
+  "smtp": {
+    "host": "smtp.example.com",
+    "port": 587,
+    "user": "noreply@late.fyi",
+    "pass_env": "SMTP_PASS",
+    "from_address": "noreply@late.fyi"
+  },
+  "ingest_token_env": "LATEFYI_INGEST_TOKEN",
+  "ingest_port": 8787,
+  "large_terminals": [
+    "Paris Gare du Nord",
+    "Paris Gare de Lyon",
+    "Paris Montparnasse",
+    "Paris Gare de l'Est",
+    "Frankfurt Hbf",
+    "Berlin Hbf",
+    "München Hbf",
+    "Roma Termini",
+    "Milano Centrale",
+    "Brussels Midi/Zuid"
+  ],
+  "polling": {
+    "default_pre_t30_minutes": 30,
+    "large_terminal_pre_t_minutes": 45,
+    "pre_departure_interval_seconds": 30,
+    "in_transit_interval_seconds": 60,
+    "arrival_interval_seconds": 30,
+    "grace_minutes": 30
+  },
+  "diff_thresholds": {
+    "delay_pre_departure_minutes": 2,
+    "delay_in_transit_minutes": 5
+  },
+  "log_retention_days": 30
+}
+```
+
+### `config/endpoints.json`
+
+(See section 8.)
+
+### `config/aliases.json`
+
+```json
+{
+  "Paris Nord": "Paris Gare du Nord",
+  "Paris Lyon": "Paris Gare de Lyon",
+  "Lille": "AMBIGUOUS:Lille Flanders|Lille Europe",
+  "Brussels": "Brussels Midi/Zuid",
+  "Bruxelles Midi": "Brussels Midi/Zuid",
+  "Frankfurt": "Frankfurt Hbf",
+  "Munich": "München Hbf"
+}
+```
+
+---
+
+## 18. Edge cases & error handling
+
+| Case | Behavior |
+|---|---|
+| Email arrives before train is scheduled (booked weeks ahead) | Schedule normally; `wake.sh` activates at T-30. |
+| Email arrives after train has already departed | If still in transit and Mode B, start polling immediately. If Mode A and >30min past arrival, reply "already arrived". |
+| Email arrives after train cancelled | Reply with cancellation status; no tracking. |
+| Train number matches multiple operators (e.g., "104" exists on DB and SNCF same day) | Reply: "Train 104 matches: ICE 104 (DB, Frankfurt→Basel) and TGV 104 (SNCF, Paris→Marseille). Reply with operator prefix or distinguishing detail." |
+| Cross-border train with different IDs per endpoint | Endpoint resolver picks operator-of-record (the one running the train), per route table. |
+| Train splits mid-route (e.g., ICE divides at Hannover) | Detect via HAFAS `trip().stopovers` containing split markers; push notice; continue tracking the half going to user's `To:`. |
+| Replacement bus | Status `replaced`; push includes "Bus from <station> to <station>" if HAFAS provides; otherwise "Replacement service — check operator app". |
+| HAFAS endpoint completely down (both primary and fallback) | After 6 consecutive failures, push "Lost tracking, data source unavailable", move to `errors/`, do not retry automatically. |
+| Sender's domain has SPF/DKIM failures | Worker still accepts (sender allowlist is the auth boundary), but logs it. |
+| Reply email bounces | Logged to `errors/`, no retry. User won't see confirmation but tracking proceeds. |
+| ntfy delivery fails persistently | Auto-fallback to email per section 6. |
+| User sends `STOP` for unknown msgid | Reply "No active tracking matches that. Send STOP <trainNum> to stop a specific train, or STOP ALL to clear everything." |
+| `STOP ALL` | Move all `active/<msgid>.json` for sender to `done/` with note. |
+| `STOP TRIP <name>` | Move all `active/<msgid>.json` for sender where `request.trip` matches `<name>` (case-insensitive) to `done/`. Reply summarizes count + train list. If no matches, reply "No active trips named '<name>'." |
+| `STOP TRIP` for a tag with zero pending/active matches but a recently-completed match | Reply "No *active* trains in trip '<name>' (3 already completed in the last 24h)." |
+| Disk fills up | `wake.sh` log retention prevents unbounded growth in normal operation. Add disk monitoring out of band. |
+
+---
+
+## 19. Security & Privacy
+
+- **Sender allowlist**: only allowlisted senders' emails are processed. Everything else dropped silently at Worker.
+- **Sender authentication (anti-spoofing, 1.15.0)**: every per-user action trusts `From`, so a forged sender could STOP/delete another user's tracking. Both the Worker and `handleInbound` drop mail whose `Authentication-Results` shows an explicit `dmarc=fail` (`src/auth-results.js`). Conservative policy — reject only on `dmarc=fail` (a real domain's owner did not send it); absent header / `dmarc=none` / temperror pass through so legit mail from no-DMARC domains isn't bounced. "Fail anywhere rejects" so a forged `dmarc=pass` can't override CF's real verdict.
+- **Published DMARC enforcement (1.17.0)**: `_dmarc.late.fyi` raised `p=none` → `p=quarantine` (explicit `sp=quarantine`). Protects `late.fyi` from being spoofed at *receivers* — distinct from the inbound `dmarc=fail` drop above, which protects *our* per-user actions from forged senders. Safe because outbound is fully aligned (SPF lists VPS `155.94.144.191`; DKIM selectors `latefyi2026` (opendkim) + `cf2024-1` (CF Email Routing)). Rollout: soak `rua` reports at `postmaster@late.fyi` ~2 weeks → `p=reject`. No `ruf=` (forensic samples breach the privacy posture). DNS-only; dashboard-managed by least-privilege.
+- **Security contact (1.17.0)**: `web/.well-known/security.txt` (RFC 9116) publishes `security@late.fyi`. Requires a CF Email Routing rule to deliver (the local-part is in the Worker's `NON_TRACKING_LOCALPARTS` drop-list as defense-in-depth).
+- **Ingest auth**: Worker → VPS uses bearer token over HTTPS. Token rotated by setting new secret in Wrangler.
+- **No PII storage beyond email + train number**: state files contain sender email and train metadata only. No location tracking, no payment info, no booking references.
+- **Per-sender action limit (1.15.0)**: broad ceiling of 60 inbound commands/hr/sender across *all* kinds (track/stop/list/config/reply), separate from the tighter track budget (10/hr, 50/day). Over the cap → silent drop. Caps backscatter amplification and repeated state scans. Pending/active files keyed `<senderHash>-<msgid>.json` so a crafted Message-ID can't overwrite another sender's record and lookups scope to the sender.
+- **ntfy topic derivation**: `sha256(sender_email)[:16]` — does not reveal the email, but is **derivable by anyone who knows the address**, and ntfy.sh public topics have no auth (a derived topic can be read or spammed). Mitigated today by ntfy being fully paused: `NTFY_ENABLED` (default off) strips ntfy from *every* dispatch result, including the critical-event override that would otherwise publish cancellations to the topic regardless of preference. **Before un-pausing, mix a per-user secret into the topic** (or use ntfy auth) so it isn't derivable from the email alone.
+- **No telemetry, no analytics, no remote sinks.** All logs local.
+- **Audit log** (`logs/audit.jsonl`): one JSONL line per state transition, for forensic debugging only.
+- **Outbound traffic** limited to: Cloudflare API (replies), HAFAS endpoints, ntfy server, optional SMTP relay. Document this in README for transparency.
+- **Token storage**: secrets in environment variables, never in committed files. `.env` in `.gitignore`.
+
+---
+
+## 20. Testing strategy
+
+### Unit tests
+- `parse.js`: 20+ fixture emails (happy path, missing headers, malformed train numbers, multiple `To:`, headers in body vs subject)
+- `stations.js`: alias table, fuzzy match cases (typos, accents, ambiguous names)
+- `diff.js`: pure-function tests with synthetic before/after `TrainState` pairs
+- `channels.js`: preference resolution under various combinations
+
+### Integration tests (offline)
+- `resolve.js` with mocked `hafas-client` returning canned responses for known trains
+- `poll.js` with mocked endpoint and clock advancement
+
+### Manual smoke test (live)
+1. Send test email from allowlisted address for a train scheduled in next hour
+2. Verify confirmation reply received
+3. Verify push at T-30
+4. Compare pushes against operator app over the journey
+5. Verify terminal push on arrival
+
+### Load test
+Not applicable — single-tenant scale. At most ~10 concurrent active requests.
+
+---
+
+## 21. Deployment
+
+> **Operator runbook (copy-pasteable, including a real-world example):** see [`docs/wiki/cloudflare-setup.md`](../wiki/cloudflare-setup.md). This section keeps the reference architecture and is the source of truth for *what* lives where; the runbook is the source of truth for *how* to set it up step by step.
+
+### Where each piece runs
+
+| Component | Hosted on | Why |
+|---|---|---|
+| Inbound email receipt + edge allowlist | Cloudflare Email Worker (free) | Email Routing only delivers via Workers; CPU-cheap allowlist filtering at the edge |
+| HTTP `/ingest` endpoint | Your VPS, port 8787 (behind reverse proxy on 443) | Persistent process, file-system state |
+| Polling daemon (`poll-runner.js`) | Your VPS | Long-lived loop; ditto state |
+| Cron `wake.sh` (every minute) | Your VPS | Activates due `pending/` records |
+| Outbound mail | Your VPS → SMTP relay (Resend / Postmark / SES / etc.) | CF Email send-binding only works inside Workers and is destination-verified-only on free; SMTP relay is the open path |
+| DNS for `late.fyi` and `ingest.late.fyi` | Cloudflare | Same dashboard handles MX + A record |
+
+### Minimum infra
+
+- 1× Cloudflare account (free)
+- 1× domain (`late.fyi`, $11–13/yr at Cloudflare Registrar)
+- 1× small VPS (1 vCPU, 512 MB RAM, 10 GB disk) OR Raspberry Pi at home — anything always-on with public IP and outbound 587/465
+- 1× SMTP relay account (Resend free tier = 3,000/mo, Postmark, AWS SES, etc.). Most VPS providers block port 25, so a relay is the practical path.
+
+### Deploy steps (existing VPS path)
+
+```sh
+# 1. On VPS — get the code
+sudo mkdir -p /opt/latefyi && sudo chown $USER /opt/latefyi
+git clone https://github.com/hamr0/latefyi /opt/latefyi
+cd /opt/latefyi
+npm install --omit=dev
+
+# 2. Generate the shared ingest token (32-byte hex)
+INGEST_TOKEN=$(openssl rand -hex 32)
+echo "$INGEST_TOKEN"   # save — you'll need it on both ends
+
+# 3. Create env file (read by systemd unit)
+sudo tee /etc/latefyi.env > /dev/null <<EOF
+STATE_DIR=/opt/latefyi/state
+LOG_DIR=/opt/latefyi/logs
+INGEST_PORT=8787
+INGEST_TOKEN=$INGEST_TOKEN
+ALLOWED_SENDERS=you@example.com
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_USER=resend
+SMTP_PASS=re_xxxxxxxxxxxx
+SMTP_FROM=noreply@late.fyi
+EOF
+sudo chmod 600 /etc/latefyi.env
+
+# 4. systemd units — see "systemd" section below
+
+# 5. Cron for wake.sh
+( crontab -l 2>/dev/null; echo "* * * * * /opt/latefyi/scripts/wake.sh >> /opt/latefyi/logs/wake.log 2>&1" ) | crontab -
+
+# 6. Reverse proxy — see "Reverse proxy" section below
+#    sudo systemctl reload caddy   (or nginx)
+
+# 7. DNS — in Cloudflare dashboard add A record:
+#    ingest.late.fyi → <vps public IP>, proxy ON (orange) — hides origin IP + enables the
+#    :443 firewall; needs a CF Origin cert + SSL Full (strict). See cloudflare-setup.md Steps 1/7.
+
+# 8. Worker — see worker/README.md for the four wrangler secret commands and `wrangler deploy`
+
+# 9. Test: send From: your-allowlisted-address to ICE145@late.fyi with
+#    Subject: From: Amsterdam Centraal, To: Berlin Ostbahnhof
+#    Confirmation reply within seconds.
+```
+
+### systemd units
+
+`/etc/systemd/system/latefyi-ingest.service`:
+
+```ini
+[Unit]
+Description=latefyi inbound email ingest server
+After=network.target
+
+[Service]
+Type=simple
+User=latefyi
+WorkingDirectory=/opt/latefyi
+EnvironmentFile=/etc/latefyi.env
+ExecStart=/usr/bin/node src/ingest-server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/latefyi-poller.service`:
+
+```ini
+[Unit]
+Description=latefyi poll-runner daemon
+After=network.target
+
+[Service]
+Type=simple
+User=latefyi
+WorkingDirectory=/opt/latefyi
+EnvironmentFile=/etc/latefyi.env
+ExecStart=/usr/bin/node src/poll-runner.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```sh
+sudo useradd --system --home /opt/latefyi --shell /usr/sbin/nologin latefyi
+sudo chown -R latefyi:latefyi /opt/latefyi
+sudo systemctl daemon-reload
+sudo systemctl enable --now latefyi-ingest latefyi-poller
+sudo systemctl status latefyi-ingest latefyi-poller
+```
+
+### Reverse proxy (Caddy — easy TLS)
+
+```
+ingest.late.fyi {
+  reverse_proxy localhost:8787
+}
+```
+
+`sudo caddy reload` or restart the service. **Note:** with `ingest.late.fyi` proxied (orange), the origin serves a CF Origin cert under SSL Full (strict), not Let's Encrypt — point Caddy at it with an explicit `tls /etc/ssl/cloudflare/ingest.late.fyi.pem /etc/ssl/cloudflare/ingest.late.fyi.key` directive instead of its auto-TLS. The nginx runbook in `cloudflare-setup.md` is the canonical path.
+
+For nginx, equivalent reverse_proxy block. Either way: only port 443 is publicly exposed (and the VPS firewall drops it from non-Cloudflare sources); 8787 stays bound to localhost.
+
+**Cert renewal.** The CF Origin cert is 15-year and needs no renewal. The previously-used Let's Encrypt cert is retired: HTTP-01 webroot renewal can't complete behind the orange proxy, so certbot renewal for ingest is disabled by renaming `/etc/letsencrypt/renewal/ingest.late.fyi.conf` → `.disabled` (certbot's renew loop only reads `*.conf`). The LE cert files under `/etc/letsencrypt/live/ingest.late.fyi/` are left in place but unused. A direct-served CF Origin cert would fail on a grey record (it isn't publicly trusted), so if ingest is ever reverted to grey, regenerate a Let's Encrypt cert — don't serve the Origin cert directly.
+
+### Update the Worker
+
+```sh
+cd worker
+wrangler secret put LATEFYI_INGEST_URL
+# enter: https://ingest.late.fyi/ingest
+wrangler secret put LATEFYI_INGEST_TOKEN
+# enter: the same INGEST_TOKEN from step 2
+wrangler secret put ALLOWED_SENDERS
+# enter: you@example.com
+wrangler deploy
+```
+
+Then in CF dashboard: Email → Email Routing → Routing rules → Catch-all → "Send to a Worker" → `latefyi-ingest`.
+
+### Verifying
+
+```sh
+# Logs from systemd
+journalctl -u latefyi-ingest -f
+journalctl -u latefyi-poller -f
+
+# Check ingest is reachable + healthy
+curl https://ingest.late.fyi/health
+# → ok
+
+# Worker tail (from your laptop)
+cd worker && wrangler tail
+```
+
+Send a test email; you should see (in order): wrangler tail logs the receipt → ingest journalctl logs the POST → reply email lands in your inbox.
+
+### Observability (flightlog + pulselog)
+
+Two zero-dep sibling libs (`flightlog`, `pulselog`), wired per `hamr0/observability-playbook.md`. Four independent layers; layers 1–3 are shipped, layer 4 (off-box backup/watch) is a parked follow-up.
+
+- **flightlog — in-app error capture.** `install()` runs once in each daemon's CLI block (`src/ingest-server.js`, `src/poll-runner.js`): global handlers catch uncaught exceptions (log synchronously, then exit 1 so systemd `Restart=on-failure` restarts clean) and unhandled rejections (log, stay alive). `capture()` records the handled swallow points that keep a daemon alive across a fault — the poll-runner tick-level catch (`where: 'poll-tick'`) and operator-alert send failure (`where: 'operator-alert-send'`), and the ingest request/send catches (`where: 'ingest-request' | 'ingest-send'`). All append to `logs/errors.jsonl`. Library functions take an optional no-op `capture`/`captureError` so tests inject nothing. **Privacy: `errors.jsonl` holds only Error name/message/stack + a static low-cardinality `where` — never a sender or trip record** (a first-class extension of the §19 invariant).
+- **pulselog health — `latefyi-health.timer`, every 15 min.** Runs the `checks` in `pulselog.config.json`: `service` (poller / ingest / postfix / opendkim), `http` on the ingest `/health`, `disk` (root + `/opt/latefyi`), `ssl` (`late.fyi`, `ingest.late.fyi`, warn <14 days), and a `mailq` depth guard. Silent on green; one summary email to `$OPERATOR_EMAIL` on any failure. (Supersedes the §18 "add disk monitoring out of band" note.)
+- **pulselog digest — `latefyi-stats-digest.timer`, weekly (Sun 09:00 UTC).** `bin/stats.js` prints one flat JSON object of counts — `{users, trains, completed, active_trains, active_users}` (counts only; active users by senderHash) — pulselog appends a `kind:"stats"` line to `logs/stats.jsonl` and emails a week-over-week table plus a flightlog rollup (**counts and group-names only, never messages/stacks**). `completed` ("works ran") = `trains_completed_count` summed across user files (§12).
+- **Config is rendered, not committed.** `pulselog.config.template.json` is committed; `scripts/install-units.sh` renders `${OPERATOR_EMAIL}` from `/etc/latefyi.env` into the gitignored `/opt/latefyi/pulselog.config.json` (so `deploy.sh`'s `git pull` never clobbers it). Alert/digest sender is `noreply@late.fyi` — the only address opendkim signs (selector `latefyi2026`), so mail is DKIM-aligned and DMARC-passing like all other outbound. Deploy the timers with `scripts/install-units.sh` (installs all four units, renders the config, `enable --now`s the timers, runs one health check).
+- **Deliverability caveat — operator address on a Microsoft domain.** Alert/digest mail is plain `sendmail` through the VPS postfix. The shared IP `155.94.144.191` (AS3130) is on Microsoft's Spamhaus feed, so mail to `@msn/outlook/hotmail/live` hard-bounces at `MAIL FROM` (`550 5.7.1 … blocked using Spamhaus`) regardless of the (passing) SPF/DKIM/DMARC — validated 2026-07-02: the operator digest signed correctly (`s=latefyi2026`) but bounced at Outlook. Fix is IP reputation (Spamhaus delist from `abuse@addypin.com`, the rDNS domain; then Microsoft feed refresh / Sender Support + JMRP; SNDS already enrolled), not any change here. Prefer a non-Microsoft operator inbox, and keep a secondary signal (the JSONL logs, and the parked §8 off-box watch) so a blocked alert isn't the only notice.
+
+```sh
+# Inspect
+tail -1 /opt/latefyi/logs/stats.jsonl | jq .          # latest weekly snapshot
+cat /opt/latefyi/logs/errors.jsonl | jq -r .where | sort | uniq -c   # error groups
+systemctl list-timers 'latefyi-*'                     # are the timers scheduled?
+node node_modules/pulselog/bin/pulselog.js --digest --dry-run --config /opt/latefyi/pulselog.config.json
+```
+
+---
+
+## 22. Decisions Log
+
+| # | Decision | Rationale |
+|---|---|---|
+| 1 | Local-part = train number, headers = optional context | Maximally one-shot; train number is the only mandatory input |
+| 2 | `From:` present = boarding mode; absent = pickup mode | Encodes intent in single bit, no flags or separate addresses |
+| 3 | One train per email | Multi-train parsing adds ambiguity; multi-leg = multiple emails |
+| 4 | Primary + fallback endpoint, never merge | Determinism beats coverage; merging multi-source live data is a debugging nightmare |
+| 5 | File-based state (no DB) | Modest scale doesn't warrant a DB; `cat`/`ls` debuggability is bare-suite-aligned |
+| 6 | Cloudflare Email Worker for ingest, not own SMTP | SMTP setup is a months-long deliverability project; Cloudflare handles it free |
+| 7 | **Email as default channel, ntfy as opt-in upgrade** (REVISED from original "ntfy primary, email fallback") | Email works for everyone with zero install; this system is shared with friends/family who shouldn't need to install an app to use it. ntfy is offered for users who explicitly want push. |
+| 8 | Critical events override channel preference | Cancellation safety > user preference |
+| 9 | Sender allowlist as auth boundary | Allowlist is simpler and more robust than per-request signing; supports multi-user without auth complexity |
+| 10 | Topic derived from `sha256(sender_email)[:16]` | Stable, private, stateless, regenerable |
+| 11 | Polling cadence varies by phase | T-30 to departure needs density; in-transit is sparser |
+| 12 | Diff-based push, not poll-based | Avoid spam; debounce delay oscillation |
+| 13 | Cron + `wake.sh` for scheduling | Matches Amr's bare-suite pattern; no in-process scheduler complexity |
+| 14 | Single dependency: `hafas-client` | Bare-suite aesthetic; everything else is Node built-ins |
+| 15 | No web UI, no dashboard | Out of scope; operator apps cover that need |
+| 16 | Domain via Cloudflare Registrar (recommended, not required) | At-cost, integrates seamlessly with Email Routing |
+| 17 | Reply emails threaded via `In-Reply-To` | Mail clients group updates per train automatically |
+| 18 | 30-day retention for `done/` and logs | Enough for debugging recent issues, prevents unbounded growth |
+| 19 | **Three lifetimes: per-user, per-train, per-change** | Cleanly separates lifetime preference (channel, ntfy topic) from ephemeral tracking (one trip) from delivery events. Eliminates the "do I need a new ntfy topic per train?" question — no, you don't. |
+| 20 | **One ntfy topic per user, all trains stream through it** | Stable subscription, no setup per train, unlimited concurrent trains. ntfy doesn't merge POSTs so each train update is its own notification. |
+| 21 | **ntfy opt-in via `CHANNELS ntfy` to `config@late.fyi`; QR sent once** | The QR/URL is the only friction point in the entire ntfy setup, and it happens exactly once per user, ever. After that, the channel is invisible. |
+| 22 | **`state/users/<sender_hash>.json` for per-user state** | Separates user lifetime data from per-train data; clean schema boundary; trivial to inspect with `cat` |
+| 23 | **Multi-user supported within single deployment** (allowlist) | Same instance can serve operator + friends + family; each gets independent channel preference and (if opted in) independent ntfy topic. Not "SaaS" — still single deployment, no auth, no billing. |
+| 24 | **Single primary endpoint (ÖBB), single fallback (PKP)** — REPLACES original per-operator endpoint table | POC (2026-04-28) found native SNCF/SBB/NS/Trenitalia/Eurostar profiles never shipped in `hafas-client`; DB profile has dead DNS; SNCB profile rejects clients. ÖBB returns live data for stations across the entire EU plus UK and is the de-facto universal HAFAS gateway. Massive simplification: ~80 LOC of `resolve.js` becomes ~20. Acknowledged single-vendor data risk (see §8). |
+| 25 | **Two-layer station disambiguation: auto-resolve from route context first, numbered reply only when truly ambiguous** | Most ambiguities (Paris/Brussels/Lille) collapse to one option once we have the train's route. Auto-resolving silently in those cases eliminates ~80% of round-trips. The remaining ambiguous cases get a numbered reply that accepts either a digit or a fuzzy-matched station name (forgiving parsing) — matches what users naturally do. |
+| 26 | **One train per email, hard rule. No multi-leg itinerary parsing — ever.** | Three reasons: (a) the *first* train is the load-bearing event for any chain — if it slips, the rest of the plan is dead anyway and the user is replanning, not waiting on automation; (b) booking-confirmation parsing is a moving-target maintenance black hole (each operator's HTML format, multiple languages, yearly drift); (c) plans change constantly and a tracked itinerary drifts out of sync with reality faster than a single-train tracking does. Multi-leg friction is mitigated instead by the optional `Trip:` tag and `STOP TRIP <name>` (cheap teardown when a chain dies) — the *real* multi-train UX win is fast unwind, not fast setup. |
+| 27 | **Always require explicit `From:` and `To:` — never auto-pick from train route, even when unambiguous** | Building the habit of typing the headers is the design goal. Auto-picking saves one round-trip in the easy case but trains users to expect the system to guess, which fails in the hard cases (multi-Paris, Lille Flandres vs Europe). Forcing explicit headers also keeps the parser predictable and makes the §7 "missing context" reply the universal entry-point doc. |
+| 28 | **Standard footer on every outbound email** | Every reply ends with the same compact footer (format reminder + STOP variants + Trip tag + case-insensitivity note). Reasons: (a) passive teaching — users absorb the grammar by repetition without reading docs; (b) every email is self-contained — no "where do I find STOP?" moment; (c) one source of truth in `reply.js` keeps the footer easy to update everywhere. ntfy push bodies skip the footer to stay short. |
+
+---
+
+## 23. Out of scope (NO-GO list)
+
+To prevent scope creep over time, the following are explicitly out of scope and should be rejected if proposed:
+
+- ❌ Booking, ticketing, refunds, seat reservation
+- ❌ Journey planning ("how do I get from X to Y?")
+- ❌ Multi-tenant SaaS, user accounts, billing, payment
+- ❌ Web UI, dashboard, admin console
+- ❌ Push channels beyond ntfy + email (no Telegram, Discord, Signal, SMS)
+- ❌ Operator-website scraping (HAFAS only)
+- ❌ Train delay prediction / ML / "smart" recommendations
+- ❌ Aggregated stats, leaderboards, "trains I tracked this year"
+- ❌ Public API for third parties
+- ❌ Hosted SaaS version of latefyi
+- ❌ Mobile app (ntfy app is the mobile app)
+- ❌ Plugin system for new operators (just add to `endpoints.json`)
+- ❌ Calendar integration ("auto-track trains from calendar events")
+- ❌ Group tracking ("track this train for me and three friends")
+- ❌ Geofencing ("notify when train enters X km of Y")
+- ❌ Voice / chatbot interfaces
+
+---
+
+## 24. Future considerations (parked)
+
+Items not in v1.0 but worth revisiting if felt pain emerges:
+
+- **`latefyictl`**: a CLI tool to inspect `state/`, manually trigger pushes, manage allowlist. Probably useful by v0.3.
+- **Self-hosted ntfy as default**: if usage grows, document the migration.
+- **Per-user preference persistence**: currently inferred from `config.json`; could move to `state/users/<email>.json` for multi-tenant support (which is itself a NO-GO, but the structure helps even single-tenant).
+- **Webhook notification**: sibling to ntfy/email, for advanced users wanting to wire latefyi into Home Assistant or similar. Only if requested.
+- **iCal feed**: read-only iCal of currently-tracked trains, for calendar overlays. Only if requested.
+- **Operator-specific quirks**: e.g., SNCF announces some intercity platforms via separate API; could add operator adapter layer if HAFAS proves insufficient.
+
+### Geographic expansion beyond EU (parked, 2026-05-04 survey)
+
+Scope filter for any future region: **regional and long-distance trains only** — explicitly excludes urban metro, tram, S-Bahn-class commuter services where the user-facing identifier is a line code (e.g., "U6") rather than a numbered service. The product premise — *email a train number, we track it* — only maps to numbered scheduled services.
+
+**Sequencing principle.** Stay EU-only until coverage there is demonstrably solid (no felt gaps, ÖBB+PKP not failing in user-visible ways). Only then consider expansion. EU is also the only region currently served by a *protocol-uniform* source set (HAFAS); every other region requires a non-HAFAS adapter.
+
+Survey of regions that pass the open-API + numbered-service filter:
+
+| Region | Source | Status | Notes |
+|---|---|---|---|
+| Switzerland | `transport.opendata.ch` | 🟢 stable, free, no key | REST (not HAFAS); covers IR/IC/RE long-distance + S-Bahn. Highest-ROI single addition if Swiss-specific gaps surface. |
+| Norway | Entur (`api.entur.io`) | 🟢 stable, free, NeTEx/SIRI | NSB intercity + regional + local. Excellent quality. |
+| Sweden | Trafiklab | 🟢 free with key | SJ long-distance + regional. GTFS-RT + REST. |
+| Finland | Digitransit | 🟢 free, MIT-licensed stack | VR network is small. Self-hostable. |
+| Taiwan | PTX (`tdx.transportdata.tw`) | 🟢 free with registration | TRA (full network) + THSRC (HSR). Train-numbered, realtime delays. |
+| UK | National Rail Open Data (Darwin/HSP) | 🟡 free with registration | Strong realtime, but UK identifier UX is awkward — riders think in headcodes/destinations, not continental-style train numbers. |
+| Japan (Tokyo) | ODPT | 🟡 free, registration, non-commercial | Tokyo metro area only — JR East suburban, Tokyo Metro, Toei. **Shinkansen and JR mainline not covered.** |
+| Korea | data.go.kr (KORAIL) | 🟡 registration often gated to Korean residents | Practically inaccessible for foreign developers. |
+| US | per-operator (MBTA, Caltrain, LIRR, Metra…) | 🟡 federated GTFS-RT | No national Amtrak open API. Per-agency integration only. |
+| China | none | 🔴 closed | 12306.cn no public API. Scrapers fragile and adversarial. |
+| India | none stable | 🔴 third-party APIs come and go | IRCTC closed. Don't rely on `RailwayAPI`-class services. |
+| Russia, most of LATAM, most of SE Asia | none | 🔴 closed | — |
+
+Priority order *if* expansion is ever pursued: **Switzerland → Norway/Sweden → Taiwan**. The first three are clean drop-ins; Taiwan validates the non-EU pattern at low cost.
+
+### Multi-adapter architecture (parked — required before any non-HAFAS source)
+
+Every non-HAFAS source forces a real abstraction. Today `resolve.js` and `poll.js` are HAFAS-shaped (tripId, `client.trip()`, station boards via `departures()`). A single adapter interface is the prerequisite for any geographic expansion:
+
+```
+interface DataSource {
+  id: string                          // 'oebb', 'sbb-ch', 'entur-no'
+  resolve(parsed) -> ResolvedTrip|null
+  poll(tripRef) -> Snapshot
+}
+```
+
+Each adapter encapsulates its own protocol; the orchestrator iterates sources in priority order. The current ÖBB→PKP pattern in `resolve.js` is a degenerate case of this orchestrator.
+
+Routing strategies considered:
+
+- **A. Probe all adapters in priority order.** Simple, current ÖBB→PKP pattern scaled. Breaks down past ~3 sources — every miss multiplies request volume against free public endpoints. Impolite at scale.
+- **B. User-typed region prefix in the local-part.** Cheapest routing logic, near-zero ambiguity, pushes a small one-time UX tax onto non-EU users only.
+- **C. Country inference from `From:`/`To:` stations.** Maintain a station-name→country index; route to that region's adapters. Best UX, but the index is a maintenance surface (renames, new stations).
+- **D. Probe EU first, disambiguation reply on miss.** Pragmatic stepping stone — extends §7a flow to ask *"did you mean a Japanese train? Try `jp...@late.fyi`"*. Adds discoverability without changing the EU default UX.
+
+**Chosen scheme (parked, agreed in principle 2026-05-04): B + D.** Explicit region prefix for non-EU, with a discoverability hint when a prefix-less email doesn't resolve.
+
+#### Local-part syntax
+
+```
+EU (default):  <trainnum>@late.fyi             e.g. rj854@late.fyi, tgv6207@late.fyi, ic2021@late.fyi
+Non-EU:        <cc><trainnum>@late.fyi         e.g. chic5@late.fyi, nor9602@late.fyi, jphikari503@late.fyi
+               <cc>-<trainnum>@late.fyi        optional dash form, accepted but not advertised
+```
+
+Region codes are ISO 3166 alpha-2. The *advertised namespace* is `{ch, no, se, fi, gb, jp, tw}` — codes for which a viable open API was identified in the regional survey above. Adding a new code is gated on identifying a viable adapter for that region; the namespace is not pre-reserved (e.g., `es` for Spain is not available because Renfe has no stable open API as of 2026-05-04).
+
+`eu` is **never required and not advertised**. If a user types it anyway (`eutgv345@late.fyi`), the parser silently strips it and routes to the EU default — be liberal in what you accept.
+
+#### Parser rule (precise)
+
+> Lowercase the local-part. If it starts with one of the advertised region codes *and* the remainder validates as a train identifier against that region's adapter, route there. Otherwise route to the EU default. The optional `-` separator (`<cc>-<trainnum>`) is stripped before matching.
+
+The "validates against the region adapter" check is the safety net: if a future EU service class collides with a region code (none today — verified against `RJ, RJX, IC, EC, EN, NJ, EUR, ICE, TGV, TER, S, RE, IR, RB`), the wrong path fails resolve and falls through to EU. Cost: one extra resolve attempt on collision. Worth it.
+
+#### Discoverability — the (D) part of B+D
+
+When a prefix-less email fails EU resolve and the train identifier *could plausibly* belong to a non-EU region, the §7 "train not found" reply gains a hint line:
+
+> *"Couldn't find `<trainnum>` in EU rail. If this is a non-EU train, prefix the region code (e.g. `ch<trainnum>@late.fyi` for Switzerland). Region codes: ch, no, se, fi, gb, jp, tw."*
+
+This ships **with the same PR that adds adapter #2**. Until then it would advertise capabilities that don't exist.
+
+#### Implementation gating
+
+This section is forward-looking design only. **Nothing changes in `resolve.js`, `parse.js`, or `worker/index.js` until adapter #2 has a concrete reason to exist** (felt user pain, repeated requests for a specific region). When that moment arrives, the work order is:
+
+1. Refactor `resolve.js`/`poll.js` to take `DataSource[]` instead of `primaryClient`/`fallbackClient`. Existing ÖBB and PKP become the first two adapters under a single `eu` region.
+2. Add the second region's adapter (real, not stub).
+3. Add the prefix parsing rule to `parse.js` / `worker/index.js`.
+4. Add the discoverability hint to §7's "train not found" template.
+5. Update `web/index.html` with a region table.
+
+Skipping straight to step 2 without step 1 is the trap — it's how you end up with `if (region === 'ch') ...` branches in `resolve.js`.
+
+These are listed for completeness only. Do not implement unless explicit pain demonstrated. Re-litigation after the fact is a known failure mode.
+
+---
+
+## 25. Implementation milestones
+
+Suggested phasing for Claude during development. Phases are ordered so each is independently demoable and the system is **fully usable end-to-end after Phase 4** (the email channel covers the full default user experience). ntfy is a Phase 5 enhancement.
+
+**Phase 1 — parser + resolver (offline)**
+- Build `parse.js` with fixture tests
+- Build `stations.js` with alias table
+- Build `resolve.js` with mocked `hafas-client`
+- Goal: given a fixture email, produce a fully-resolved request object
+
+**Phase 2 — scheduler + state**
+- Build `schedule.js`, file layout, `wake.sh`, `users.js`
+- Goal: parsed request → `pending/<msgid>.json` → moved to `active/` at the right moment; per-user state files created on first contact
+
+**Phase 3 — poller + diff (no delivery yet)**
+- Build `poll.js`, `diff.js` against live `hafas-client`
+- Pushes are written to `logs/push.jsonl` only, not delivered
+- Goal: real polling against real trains, real diff events recorded — verify cadence and diff logic before any delivery is wired
+
+**Phase 4 — email channel + reply (full default UX)**
+- Build `reply.js`, email side of `push.js`, SMTP config
+- Implement confirmation replies, error replies, threaded update emails
+- **At end of this phase the system is fully usable**: email-in, email-out, complete loop
+- Goal: track a real train end-to-end via email only
+
+**Phase 5 — Cloudflare Worker + DNS (production ingest)**
+- Deploy Worker, configure Email Routing, allowlist enforcement at edge
+- Goal: real emails to `*@late.fyi` trigger real tracking in production
+
+**Phase 6 — ntfy opt-in**
+- Build ntfy side of `push.js`, `CHANNELS` configuration handler in `users.js`
+- Build opt-in reply with QR code generation
+- Wire fallback-to-email on ntfy failures
+- Goal: users who want push notifications can opt in and get them; email users completely unaffected
+
+**Phase 7 — hardening**
+- **Outbound deliverability** (so replies don't land in junk once we go beyond the operator's own inbox):
+  - SPF: append VPS IP `155.94.144.191` to the `late.fyi` SPF TXT record
+  - DKIM: configure opendkim signing-table for `noreply@late.fyi` (opendkim already running on the VPS for addypin — just add a key + signing-table entry)
+  - PTR / reverse DNS for the sending IP via the VPS provider
+- **Disambiguation reply completion flow** — server.js currently silently drops replies that aren't fresh tracking requests; wire the digit-or-fuzzy-name reply back to the pending station-resolution
+- **Abuse limits** in preparation for broadening allowlist beyond the operator:
+  - Per-sender rate limits (fresh-request count per hour/day)
+  - Max active trains per sender
+  - First-time-sender confirmation handshake
+- **Operations**: log retention pruning (`logs/push.jsonl`, error logs), HAFAS-disagreement logging when ÖBB and PKP both succeed but disagree, edge-case error handling
+- **30-day unattended-operation soak test**
+- Goal: runs unattended for 30+ days, recovers from HAFAS outages, never loses a tracking request, replies reliably reach Gmail/Outlook/Apple inboxes, safe to broaden the allowlist
+
+Each phase is independently demoable and shippable. Email-default architecture means Phases 1–5 deliver complete value; Phase 6 (ntfy) is purely additive.
+
+---
+
+**End of PRD.**
