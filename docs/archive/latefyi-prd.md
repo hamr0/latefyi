@@ -7,7 +7,7 @@
 
 Outstanding: 30-day soak.
 
-See `CHANGELOG.md` for the full revision history. See `docs/wiki/cloudflare-setup.md` for the operator deployment runbook.
+See `CHANGELOG.md` for the full revision history. See `docs/product/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr
 **Intended developer:** Claude (Sonnet 4.6+ recommended for implementation)
 
@@ -1357,7 +1357,7 @@ Not applicable — single-tenant scale. At most ~10 concurrent active requests.
 
 ## 21. Deployment
 
-> **Operator runbook (copy-pasteable, including a real-world example):** see [`docs/wiki/cloudflare-setup.md`](../wiki/cloudflare-setup.md). This section keeps the reference architecture and is the source of truth for *what* lives where; the runbook is the source of truth for *how* to set it up step by step.
+> **Operator runbook (copy-pasteable, including a real-world example):** see [`docs/product/cloudflare-setup.md`](../product/cloudflare-setup.md). This section keeps the reference architecture and is the source of truth for *what* lives where; the runbook is the source of truth for *how* to set it up step by step.
 
 ### Where each piece runs
 
