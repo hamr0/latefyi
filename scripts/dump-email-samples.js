@@ -1,5 +1,5 @@
 // Renders a representative sample of every outbound email template
-// late.fyi can produce. Used to (re)generate docs/email-formats.md.
+// late.fyi can produce. Used to (re)generate docs/product/email-formats.md.
 //
 //   node scripts/dump-email-samples.js > /tmp/samples.txt
 //

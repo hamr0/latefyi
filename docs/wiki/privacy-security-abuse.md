@@ -11,7 +11,7 @@ Sender allowlist and authentication, what is stored, and the storage schema that
 
 ## Sender allowlist and authentication
 
-- **Sender allowlist**: only allowlisted senders' emails are processed; everything else is dropped silently at the Worker. (docs/archive/latefyi-prd.md:1319-1319)
+- **Sender allowlist**: when `ALLOWED_SENDERS` is set, only listed senders' emails are processed and everything else is dropped silently at the Worker. In production it is empty, which means open to anyone. (docs/archive/latefyi-prd.md:1319-1319)
 - **Anti-spoofing (1.15.0)**: every per-user action trusts `From`, so a forged sender could STOP/delete another user's tracking. The Worker and `handleInbound` both drop mail whose `Authentication-Results` shows an explicit `dmarc=fail` (`src/auth-results.js`). (docs/archive/latefyi-prd.md:1320-1320)
   - Conservative policy: reject only on `dmarc=fail`. Absent header, `dmarc=none` or temperror pass through, so legitimate mail from no-DMARC domains isn't bounced. (docs/archive/latefyi-prd.md:1320-1320)
   - "Fail anywhere rejects", so a forged `dmarc=pass` can't override CF's real verdict. (docs/archive/latefyi-prd.md:1320-1320)
@@ -30,8 +30,8 @@ Sender allowlist and authentication, what is stored, and the storage schema that
 
 - **No PII beyond email + train number**: state files hold sender email and train metadata only. No location tracking, payment info or booking references. (docs/archive/latefyi-prd.md:1324-1324)
 - **No telemetry, no analytics, no remote sinks.** All logs are local. (docs/archive/latefyi-prd.md:1327-1327)
-- **Audit log** (`logs/audit.jsonl`): one JSONL line per state transition, for forensic debugging only. (docs/archive/latefyi-prd.md:1328-1328)
-- **Outbound traffic** is limited to the Cloudflare API (replies), HAFAS endpoints, the ntfy server and an optional SMTP relay; to be documented in the README for transparency. (docs/archive/latefyi-prd.md:1329-1329)
+- **Audit log** (`logs/audit.jsonl`): specified in the original PRD but not implemented; `logs/push.jsonl` (senderHash only) is the event log. (docs/archive/latefyi-prd.md:1328-1328)
+- **Outbound traffic** is limited to HAFAS endpoints, the ntfy server (paused) and outbound mail through the VPS's own postfix + opendkim; to be documented in the README for transparency. (docs/archive/latefyi-prd.md:1329-1329)
 - **Token storage**: secrets live in environment variables, never in committed files; `.env` is in `.gitignore`. (docs/archive/latefyi-prd.md:1330-1330)
 
 ## ntfy topic derivation
@@ -46,9 +46,9 @@ Sender allowlist and authentication, what is stored, and the storage schema that
 
 A single JSON record per request holds: `msgid`, `received_at`, `sender`, `request` (`trainNum`, `mode`, `from`, `to`, `channels`), `resolved` (`endpoint`, `trainId`, `scheduledDeparture`, `scheduledArrivalAtTo`, `route`), `schedule` (`poll_start_time`, `poll_end_time`), `state` (`phase`, `lastPolledAt`, `lastPushedSnapshot`, `consecutivePollFailures`, `endpointInUse`) and `pushes`. A new record starts at `phase: "PRE_DEPARTURE"` with no polls and an empty `pushes` list. (docs/archive/latefyi-prd.md:863-897)
 
-### `done/<msgid>.json`
+### No `done/` archive
 
-Same schema, with `state.phase = "DONE"` and `pushes` populated; retained 30 days then auto-pruned by `wake.sh`. (docs/archive/latefyi-prd.md:899-901)
+On a terminal event (arrival, STOP, cancellation, tracking-lost) the `active/<msgid>.json` record is deleted with `unlinkSync()`; nothing is copied or retained. Plaintext sender exists only in `active/` during tracking.
 
 ### `state/users/<sender_hash>.json` (per-user, lifetime)
 
@@ -58,7 +58,7 @@ Same schema, with `state.phase = "DONE"` and `pushes` populated; retained 30 day
 
 `CHANNELS` handling:
 
-- `CHANNELS ntfy` or `CHANNELS both`: update `channel`. If `ntfy_opt_in_sent_at` is null, send the QR/URL opt-in reply (see §7) and set it to now; if already set, just confirm the change and don't resend the QR. (docs/archive/latefyi-prd.md:923-926)
+- `CHANNELS ntfy` or `CHANNELS both` (ntfy is paused: `handleConfig` in `src/server.js` forces `channel = "email"` and replies "ntfy delivery is paused"; the opt-in flow below is the original design and is not currently sent): update `channel`. If `ntfy_opt_in_sent_at` is null, send the QR/URL opt-in reply (see §7) and set it to now; if already set, just confirm the change and don't resend the QR. (docs/archive/latefyi-prd.md:923-926)
 - `CHANNELS email`: set `channel = "email"`. The ntfy topic stays in the file so re-opting in is instant. (docs/archive/latefyi-prd.md:928-930)
 
 ### Why files, not a database

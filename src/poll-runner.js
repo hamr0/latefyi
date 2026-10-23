@@ -1,6 +1,6 @@
 // Poll-runner daemon. Scans state/active/*.json each tick; for each file
 // where shouldPollNow() is true, runs poll(), atomic-writes the updated
-// record, appends events to logs/push.jsonl, and moves the file to state/done/
+// record, appends events to logs/push.jsonl, and deletes the file (no archive)
 // when isTerminal().
 //
 // Two entry points:

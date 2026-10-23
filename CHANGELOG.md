@@ -10,6 +10,20 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.18.3 — docs accuracy pass: stale claims, deploy steps, file layout (2026-10-23)
+
+PRD → 1.18.3. Docs corrections plus comment/import cleanup; no behaviour change.
+
+### Changed
+
+- **Stale claims rewritten to match the code and `CLAUDE.md`.** No `done/` or `errors/` archive and no 30-day retention (terminal records are deleted); own postfix + opendkim, no Resend; routable per-template `From:` (not `noreply@`); ntfy paused (opt-in flow marked paused, persistent-failure row now says all delivery is email and the fail-streak → email fallback was never built); open allowlist; `wake.sh` no longer prunes or spawns.
+- **Deployment steps restored and split.** Deploy steps 4 (systemd) and 6 (reverse proxy) restored verbatim from the archived PRD; the Deployment section moved to `docs/wiki/deployment-steps.md` to keep both pages under the 250-line ceiling. Archived-PRD runbook links now point at `docs/product/cloudflare-setup.md`.
+- **Real file layout.** `polling-state-architecture` now shows the built tree (from `git ls-files`) instead of the PRD's planned one, notes never-built files, and corrects the runtime deps.
+- **Lost tracking fires at 6 consecutive poll failures** (`src/poll.js`); the PRD's retry-3x and switch-to-fallback-at-3 were never built and are corrected.
+- **Disambiguation:** only the 24h TTL exists; the 3-retry cap and `poll_start_time`-5min cutoff are marked not implemented.
+- **PRD:** real STOP reply text; explicit `dmarc=fail` is dropped in both the Worker and `handleInbound`.
+- **Code, no behaviour change:** removed the unused `ntfyOptInReply` import in `src/server.js`; comment fixes in `src/poll-runner.js` (terminal records are deleted, not moved to `done/`), `src/resolve.js` and `scripts/dump-email-samples.js` (stale doc paths).
+
 ## 0.18.2 — docs reorg: PRD and runbook split into product/wiki pages (2026-10-23)
 
 PRD → 1.18.2. Docs-only; no code or behaviour change.

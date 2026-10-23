@@ -41,7 +41,7 @@ Why late.fyi is shaped the way it is: the numbered decisions log, the explicit N
 - Diff-based push, not poll-based, to avoid spam and debounce delay oscillation (docs/archive/latefyi-prd.md:1558).
 - Three lifetimes: per-user, per-train, per-change. This separates lifetime preference (channel, ntfy topic) from ephemeral tracking (one trip) from delivery events, and removes the "new ntfy topic per train?" question (docs/archive/latefyi-prd.md:1565).
 - `state/users/<sender_hash>.json` holds per-user state: a clean schema boundary, trivial to inspect with `cat` (docs/archive/latefyi-prd.md:1568).
-- 30-day retention for `done/` and logs: enough for debugging recent issues, prevents unbounded growth (docs/archive/latefyi-prd.md:1564).
+- Originally: 30-day retention for `done/` and logs. Superseded: there is no `done/` (terminal records are deleted, zero retention); this entry stands only as history (docs/archive/latefyi-prd.md:1564).
 
 ### Ingest and auth
 

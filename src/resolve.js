@@ -3,7 +3,7 @@
 //
 // PRD §13.2 (revised). Endpoint strategy: ÖBB primary, PKP fallback. No
 // per-operator routing; the ÖBB HAFAS endpoint serves as a universal
-// European query gateway (validated in the POC, see docs/01-product/).
+// European query gateway (validated in the POC, see docs/wiki/data-sources-hafas.md).
 //
 // Pure of network details: all hafas-client interaction goes through
 // `primaryClient` / `fallbackClient` parameters, so tests inject fakes
