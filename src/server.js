@@ -23,7 +23,7 @@ import { senderFailsDmarc } from './auth-results.js';
 import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
-  unauthorizedSenderReply, disposableSenderReply, stopReply, ntfyOptInReply, genericErrorReply,
+  unauthorizedSenderReply, disposableSenderReply, stopReply, genericErrorReply,
   rateLimitedReply, tooManyActiveReply, listReply, FOOTER,
 } from './reply.js';
 

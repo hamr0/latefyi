@@ -50,7 +50,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 
 ### Failure transitions (any state to ERROR)
 
-- HAFAS endpoint down (both ÖBB and PKP): retry 3x, then push "Lost tracking for RE19750, data source unavailable" (docs/archive/latefyi-prd.md:778-778).
+- HAFAS endpoint down: each failed poll increments `consecutivePollFailures`; at 6 consecutive failures the poller emits an urgent "Lost tracking for <line>" event and the record is deleted (`MAX_CONSECUTIVE_FAILURES = 6`, src/poll.js:109,127). There is no mid-poll ÖBB-to-PKP switch: the endpoint is fixed at resolve time (`endpointInUse`, src/schedule.js:106; src/poll-runner.js:105). The original PRD said "retry 3x" (docs/archive/latefyi-prd.md:778-778).
 - Parser or validator failure: reply with an error, no state file written (docs/archive/latefyi-prd.md:779-780).
 - Disambiguation timeout (24h; the original PRD's 3-retry cap and `poll_start_time` minus 5 min cutoff are not implemented): the parked `pending-disambig/` record expires after 24h (lazy expiry on read) and is deleted; a later reply to it is dropped silently, with no timeout reply and no `done/` copy (docs/archive/latefyi-prd.md:781-781).
 - There is no `errors/` archive: a malformed `active/` record is logged and deleted. No retry except HAFAS 5xx (docs/archive/latefyi-prd.md:783-783).
@@ -67,20 +67,20 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 
 ### File layout
 
-The PRD's layout (docs/archive/latefyi-prd.md:799-836):
+The tree as built (`git ls-files`); the PRD's plan (docs/archive/latefyi-prd.md:799-836) differed:
 
-- `config/`: `config.json` (allowed_senders, ntfy server, default channels, large_terminals, polling overrides) and `endpoints.json` (operator to HAFAS profile mapping).
-- `src/`: `parse.js`, `resolve.js`, `reply.js`, `schedule.js`, `poll.js`, `diff.js`, `push.js`, `channels.js`, `users.js`, `stations.js`, `server.js`.
-- `scripts/`: `wake.sh`, `setup-ntfy.sh`, `test-email.sh`.
-- `worker/`: `wrangler.toml`, `index.js` (Cloudflare Email Worker).
-- `state/`: `users/` (per-user lifetime state), `pending/`, `active/`, `pending-disambig/`. No `done/` or `errors/`: terminal records are deleted.
-- `logs/`: `push.jsonl` (one line per push attempt, senderHash only) and `errors.jsonl` (flightlog) are what the code writes; the PRD's `audit.jsonl` and `disagreement.log` are not implemented.
+- `src/` pipeline: `parse.js` (email to discriminated request), `resolve.js` (train lookup), `stations.js` (fuzzy station match), `disambig.js` (parked disambiguation state), `schedule.js` (writes `pending/`), `poll.js` (one poll cycle), `diff.js` (snapshot diff to events), `push.js` (dispatch), `reply.js` (reply templates), `time-fmt.js` (station-local times), `users.js` (per-user state).
+- `src/` daemons and edges: `server.js` (inbound orchestrator), `ingest-server.js` (HTTP `/ingest`), `poll-runner.js` (poll daemon), `smtp-transport.js` (nodemailer), `ntfy-transport.js` (paused), `auth-results.js` (`dmarc=fail` check).
+- `config/`: `aliases.json` (station aliases), `disposable-domains.txt` (blocklist). Both tracked.
+- `bin/stats.js`: counts-only JSON for the pulselog weekly digest.
+- `scripts/`: `wake.sh`, `deploy.sh`, `vps.sh`, `install-units.sh`, `stats.sh`, `stats-email.sh`, `refresh-disposable-domains.sh`, `cron-refresh-disposable.sh`, `dump-email-samples.js`.
+- `worker/`: `index.js` (Cloudflare Email Worker), `wrangler.toml` (reference only), `README.md`.
+- `state/`: `users/`, `pending/`, `active/`, `pending-disambig/`. No `done/` or `errors/`: terminal records are deleted.
+- `logs/`: `push.jsonl` (senderHash only) and `errors.jsonl` (flightlog) are what the code writes; the PRD's `audit.jsonl` and `disagreement.log` are not implemented.
 
-`package.json` declares `hafas-client` only (docs/archive/latefyi-prd.md:801-801).
+The PRD's `channels.js`, `setup-ntfy.sh`, `test-email.sh` and `config.json`/`endpoints.json` were never built.
 
-### Size estimate
-
-About 720 lines of code in total: `parse.js` 60, `resolve.js` 90, `reply.js` 60, `schedule.js` 30, `poll.js` 80, `diff.js` 70, `push.js` 60, `channels.js` 40, `users.js` 50, `stations.js` 60, `server.js` 40, `wake.sh` 20, Worker `index.js` 60 (docs/archive/latefyi-prd.md:840-855). The single dependency is `hafas-client`; QR generation in `users.js` uses a tiny inline ASCII renderer or shells out to `qrencode` if available (docs/archive/latefyi-prd.md:857-857).
+Runtime dependencies in `package.json`: `hafas-client`, `nodemailer`, `flightlog`, `pulselog`.
 
 ## Component specifications
 
@@ -124,7 +124,7 @@ Computes `poll_start_time = scheduledDeparture - 30min` (-45min for large termin
 Takes an `active/<msgid>.json`, updates it in place, dispatches pushes and eventually deletes it on a terminal event (docs/archive/latefyi-prd.md:1011-1013). The loop (docs/archive/latefyi-prd.md:1016-1032):
 
 - Load the file and call hafas-client for current train state.
-- On endpoint failure increment `consecutivePollFailures`; at 3 or more switch to the fallback endpoint; at 6 or more emit a "tracking lost" push and delete the record; continue with backoff.
+- On endpoint failure increment `consecutivePollFailures`; at 6 or more emit a "tracking lost" push and delete the record (src/poll.js:109,127). The PRD's switch to the fallback endpoint at 3 failures is not implemented.
 - Build a `TrainState` snapshot, diff against `state.lastPushedSnapshot`, and call `push.js` if there are changes.
 - Update `lastPushedSnapshot` and `lastPolledAt`, write atomically, and if terminal delete the record and exit; otherwise sleep per cadence rules.
 
