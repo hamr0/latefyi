@@ -52,9 +52,9 @@ INGEST_PORT=8787
 INGEST_TOKEN=<paste $INGEST_TOKEN>
 ALLOWED_SENDERS=you@example.com
 
-# Local Postfix as smarthost. If you don't have Postfix, point this at an
-# external SMTP relay (Resend: smtp.resend.com:465, user "resend",
-# pass = your API key).
+# Local Postfix (+ opendkim, selector latefyi2026) sends all outbound mail.
+# SMTP_HOST has no default: unset = dry-run, replies parsed but not sent.
+# SMTP_FROM is only a last-resort default; each message sets its own routable From.
 SMTP_HOST=localhost
 SMTP_PORT=25
 SMTP_FROM=noreply@late.fyi

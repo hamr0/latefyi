@@ -90,7 +90,7 @@ The reply is matched against `state.choices` in order (docs/archive/latefyi-prd.
 ### Timeout
 
 - Awaiting-disambiguation requests auto-cancel 24 hours after the disambiguation reply was sent, or at `poll_start_time - 5 minutes`, whichever is earlier (docs/archive/latefyi-prd.md:548).
-- On timeout the system sends "Disambiguation timed out for `<TRAINNUM>`. Send a fresh email with a more specific station name." The PRD text also says to move the file to `done/` with `phase = "TIMED_OUT"` (docs/archive/latefyi-prd.md:549).
+- As implemented, a parked disambiguation record expires after 24h (`src/disambig.js`, lazy expiry on read) and is deleted; a later reply to it is dropped silently, so no timeout message is sent and nothing is archived to `done/`. (The original PRD text specified a "Disambiguation timed out" reply and a `done/` move with `phase = "TIMED_OUT"`: docs/archive/latefyi-prd.md:549.)
 
 ### Coverage
 

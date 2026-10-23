@@ -35,7 +35,7 @@ Channels are configurable per user (lifetime preference) or per request (one-sho
 
 ### `email` (default for all new users)
 
-- Sent from `noreply@late.fyi` via the Cloudflare Email Workers `send_email` binding (or SMTP relay). (docs/archive/latefyi-prd.md:208-208)
+- Sent through the VPS's own postfix + opendkim (SMTP), from a routable per-template local-part (`<TRAINNUM>@`, `stop@`, `config@`, `help@`), not `noreply@`. (docs/archive/latefyi-prd.md:208-208)
 - Subject is a short status (e.g. "RE19750 → Platform 7"); body has full detail: current platform, delay, scheduled times, route summary, last-update timestamp. (docs/archive/latefyi-prd.md:209-210)
 - Threaded: all updates for one tracked train share the `In-Reply-To` of the original confirmation reply, so mail clients group them into one conversation. (docs/archive/latefyi-prd.md:211-211)
 - Default because it needs zero setup. (docs/archive/latefyi-prd.md:212-212)

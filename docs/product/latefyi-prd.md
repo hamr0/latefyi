@@ -28,7 +28,8 @@ See `CHANGELOG.md` for the full revision history. See `docs/product/cloudflare-s
 - [Data sources and HAFAS](../wiki/data-sources-hafas.md) — HAFAS endpoints, fallback policy, station resolution.
 - [Polling, State Machine and Architecture](../wiki/polling-state-architecture.md) — modes, cadence, state machine, components, tests.
 - [Privacy, Security and Abuse Controls](../wiki/privacy-security-abuse.md) — allowlist, sender auth, what is stored, storage schema.
-- [Deployment, Configuration and Observability](../wiki/deployment-config-observability.md) — Cloudflare, config, systemd, flightlog/pulselog.
+- [Deployment, Configuration and Observability](../wiki/deployment-config-observability.md) — Cloudflare Worker, DNS, config, flightlog/pulselog.
+- [Deployment Steps and Infrastructure](../wiki/deployment-steps.md) — where each piece runs, VPS deploy steps, systemd, reverse proxy, verification.
 - [Decisions, Scope and Roadmap](../wiki/decisions-scope-roadmap.md) — decisions log, NO-GO list, phased milestones.
 
 What the product is, how users interact with it by email, and how user-visible edge cases behave.
@@ -89,7 +90,7 @@ Example: picking up a friend on TGV 9876 arriving at Lille Flanders 16:48 (docs/
 
 ### Optional flow: ntfy opt-in
 
-For users who want faster, app-style push instead of, or in addition to, email (docs/archive/latefyi-prd.md:75-75).
+For users who want faster, app-style push instead of, or in addition to, email (docs/archive/latefyi-prd.md:75-75). **Currently paused:** `config@late.fyi` accepts `CHANNELS ntfy` but replies "ntfy delivery is paused" and keeps the user on email; the flow below is the designed behaviour, kept for re-enable.
 
 1. The user emails `config@late.fyi` with subject `CHANNELS ntfy` (or `CHANNELS both`) (docs/archive/latefyi-prd.md:77-77).
 2. The system replies once with a personal ntfy topic URL and a QR code. The reply explains how to install the ntfy app and subscribe, says all tracked trains will push there, and says `CHANNELS email` switches back (docs/archive/latefyi-prd.md:78-83).
@@ -118,12 +119,12 @@ For users who want faster, app-style push instead of, or in addition to, email (
 | Cross-border train with different IDs per endpoint | The endpoint resolver picks the operator-of-record (the one running the train), per route table (docs/archive/latefyi-prd.md:1302-1302). |
 | Train splits mid-route (e.g. ICE divides at Hannover) | Detect via HAFAS `trip().stopovers` split markers, push a notice, and continue tracking the half going to the user's `To:` (docs/archive/latefyi-prd.md:1303-1303). |
 | Replacement bus | Status `replaced`. The push includes "Bus from <station> to <station>" if HAFAS provides it, otherwise "Replacement service — check operator app" (docs/archive/latefyi-prd.md:1304-1304). |
-| HAFAS endpoint completely down (primary and fallback) | After 6 consecutive failures, push "Lost tracking, data source unavailable", move to `errors/`, no automatic retry (docs/archive/latefyi-prd.md:1305-1305). |
+| HAFAS endpoint completely down (primary and fallback) | After 6 consecutive failures, push "Lost tracking, data source unavailable", delete the record (no `errors/` archive), no automatic retry (docs/archive/latefyi-prd.md:1305-1305). |
 | Sender's domain has SPF/DKIM failures | The Worker still accepts (the sender allowlist is the auth boundary) but logs it (docs/archive/latefyi-prd.md:1306-1306). |
-| Reply email bounces | Logged to `errors/`, no retry. The user won't see confirmation but tracking proceeds (docs/archive/latefyi-prd.md:1307-1307). |
+| Reply email bounces | Not archived (there is no `errors/`). The user won't see confirmation but tracking proceeds (docs/archive/latefyi-prd.md:1307-1307). |
 | ntfy delivery fails persistently | Auto-fallback to email per section 6 of the PRD (docs/archive/latefyi-prd.md:1308-1308). |
 | `STOP` for an unknown msgid | Reply "No active tracking matches that. Send STOP <trainNum> to stop a specific train, or STOP ALL to clear everything." (docs/archive/latefyi-prd.md:1309-1309). |
-| `STOP ALL` | Move all `active/<msgid>.json` for the sender to `done/` with a note (docs/archive/latefyi-prd.md:1310-1310). |
-| `STOP TRIP <name>` | Move all of the sender's `active/<msgid>.json` where `request.trip` matches `<name>` (case-insensitive) to `done/`. The reply summarizes count and train list; with no matches it replies "No active trips named '<name>'." (docs/archive/latefyi-prd.md:1311-1311). |
+| `STOP ALL` | Delete all `active/<msgid>.json` for the sender (no `done/` archive) (docs/archive/latefyi-prd.md:1310-1310). |
+| `STOP TRIP <name>` | Delete all of the sender's `active/<msgid>.json` where `request.trip` matches `<name>` (case-insensitive). The reply summarizes count and train list; with no matches it replies "No active trips named '<name>'." (docs/archive/latefyi-prd.md:1311-1311). |
 | `STOP TRIP` for a tag with no pending/active matches but a recently completed one | Reply "No *active* trains in trip '<name>' (3 already completed in the last 24h)." (docs/archive/latefyi-prd.md:1312-1312). |
 | Disk fills up | `wake.sh` log retention prevents unbounded growth in normal operation; add disk monitoring out of band (docs/archive/latefyi-prd.md:1313-1313). |

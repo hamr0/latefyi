@@ -46,14 +46,14 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 4. **VALIDATED**: train exists, route validated, stations match (docs/archive/latefyi-prd.md:756-757).
 5. **SCHEDULED**: the scheduler wrote `pending/<msgid>.json` with `poll_start_time` and a confirmation reply was sent; the request waits for `poll_start_time` (docs/archive/latefyi-prd.md:759-763).
 6. **ACTIVE**: `wake.sh` cron (every 1 min) moves due files to `active/`; the poller daemon polls every 30-60s, diffs and pushes (docs/archive/latefyi-prd.md:765-768).
-7. **DONE**: on a terminal event (arrival, cancellation, past grace) the record is moved to `done/<msgid>.json` with final state (docs/archive/latefyi-prd.md:770-774).
+7. **DONE**: on a terminal event (arrival, cancellation, past grace) the record is deleted (`unlinkSync()`); there is no `done/` archive (docs/archive/latefyi-prd.md:770-774).
 
 ### Failure transitions (any state to ERROR)
 
 - HAFAS endpoint down (both ÖBB and PKP): retry 3x, then push "Lost tracking for RE19750, data source unavailable" (docs/archive/latefyi-prd.md:778-778).
 - Parser or validator failure: reply with an error, no state file written (docs/archive/latefyi-prd.md:779-780).
-- Disambiguation timeout (3 retries, 24h, or poll_start_time minus 5 min): moved to `done/` with `phase = "TIMED_OUT"` and a timeout reply sent (docs/archive/latefyi-prd.md:781-781).
-- `ERROR` files go to `errors/<msgid>.json` for inspection. No retry except HAFAS 5xx (docs/archive/latefyi-prd.md:783-783).
+- Disambiguation timeout (3 retries, 24h, or poll_start_time minus 5 min): the parked `pending-disambig/` record expires after 24h (lazy expiry on read) and is deleted; a later reply to it is dropped silently, with no timeout reply and no `done/` copy (docs/archive/latefyi-prd.md:781-781).
+- There is no `errors/` archive: a malformed `active/` record is logged and deleted. No retry except HAFAS 5xx (docs/archive/latefyi-prd.md:783-783).
 
 ## Architecture
 
@@ -63,7 +63,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 2. Node service (VPS or home server): parser, resolver, scheduler, poller, push dispatcher (docs/archive/latefyi-prd.md:792-792).
 3. ntfy app on the phone, subscribed to the user's private topic (docs/archive/latefyi-prd.md:793-793).
 4. Cron (`wake.sh`) activating due requests every minute (docs/archive/latefyi-prd.md:794-794).
-5. File system: `pending/`, `active/`, `done/`, `errors/` as the only state store (docs/archive/latefyi-prd.md:795-795).
+5. File system: `pending/`, `active/` (plus `users/` and `pending-disambig/`) as the only state store; terminal records are deleted, not archived (docs/archive/latefyi-prd.md:795-795).
 
 ### File layout
 
@@ -73,7 +73,7 @@ The PRD's layout (docs/archive/latefyi-prd.md:799-836):
 - `src/`: `parse.js`, `resolve.js`, `reply.js`, `schedule.js`, `poll.js`, `diff.js`, `push.js`, `channels.js`, `users.js`, `stations.js`, `server.js`.
 - `scripts/`: `wake.sh`, `setup-ntfy.sh`, `test-email.sh`.
 - `worker/`: `wrangler.toml`, `index.js` (Cloudflare Email Worker).
-- `state/`: `users/` (per-user lifetime state), `pending/`, `active/`, `done/`, `errors/`.
+- `state/`: `users/` (per-user lifetime state), `pending/`, `active/`, `pending-disambig/`. No `done/` or `errors/`: terminal records are deleted.
 - `logs/`: `audit.jsonl` (one line per state transition), `disagreement.log` (primary vs fallback diffs), `push.jsonl` (one line per push attempt).
 
 `package.json` declares `hafas-client` only (docs/archive/latefyi-prd.md:801-801).
@@ -121,12 +121,12 @@ Computes `poll_start_time = scheduledDeparture - 30min` (-45min for large termin
 
 ### `poll.js` (13.5)
 
-Takes an `active/<msgid>.json`, updates it in place, dispatches pushes and eventually moves it to `done/` (docs/archive/latefyi-prd.md:1011-1013). The loop (docs/archive/latefyi-prd.md:1016-1032):
+Takes an `active/<msgid>.json`, updates it in place, dispatches pushes and eventually deletes it on a terminal event (docs/archive/latefyi-prd.md:1011-1013). The loop (docs/archive/latefyi-prd.md:1016-1032):
 
 - Load the file and call hafas-client for current train state.
-- On endpoint failure increment `consecutivePollFailures`; at 3 or more switch to the fallback endpoint; at 6 or more emit a "tracking lost" push and move to `errors/`; continue with backoff.
+- On endpoint failure increment `consecutivePollFailures`; at 3 or more switch to the fallback endpoint; at 6 or more emit a "tracking lost" push and delete the record; continue with backoff.
 - Build a `TrainState` snapshot, diff against `state.lastPushedSnapshot`, and call `push.js` if there are changes.
-- Update `lastPushedSnapshot` and `lastPolledAt`, write atomically, and if terminal move to `done/` and exit; otherwise sleep per cadence rules.
+- Update `lastPushedSnapshot` and `lastPolledAt`, write atomically, and if terminal delete the record and exit; otherwise sleep per cadence rules.
 
 ### `diff.js` (13.6)
 
@@ -152,12 +152,11 @@ All updates write to `<file>.tmp` then rename; no locking is needed at this scal
 Run by cron every minute (`* * * * * /opt/latefyi/scripts/wake.sh`) (docs/archive/latefyi-prd.md:1092-1092). As specified, it (docs/archive/latefyi-prd.md:1070-1089):
 
 - Moves each `state/pending/*.json` whose `schedule.poll_start_time` is due into `state/active/` and logs it to `logs/audit.jsonl`.
-- Prunes `state/done` files older than 30 days.
-- Starts `node src/poll-runner.js` with nohup if no such process is running.
+- Does not prune or spawn anything: there is no `done/` to prune, and the poll-runner daemon is owned by systemd (`wake.sh` only activates due records).
 
 ### `worker/index.js` (13.9)
 
-The Cloudflare Email Worker silently drops mail from senders not in `ALLOWED_SENDERS` (no bounce, to avoid backscatter to spoofed senders). Otherwise it reads the raw body and subject and POSTs `{msgid, from, to, subject, body, receivedAt}` as JSON to `LATEFYI_INGEST_URL` with a `Bearer` `LATEFYI_INGEST_TOKEN`, logging an error if the response is not ok (docs/archive/latefyi-prd.md:1098-1129). `wrangler.toml` configures the route `*@late.fyi` to this worker and the secrets `ALLOWED_SENDERS`, `LATEFYI_INGEST_URL`, `LATEFYI_INGEST_TOKEN` (docs/archive/latefyi-prd.md:1133-1133).
+The Cloudflare Email Worker silently drops mail from senders not in `ALLOWED_SENDERS` when it is set (empty = open, as in production) (no bounce, to avoid backscatter to spoofed senders). Otherwise it reads the raw body and subject and POSTs `{msgid, from, to, subject, body, receivedAt}` as JSON to `LATEFYI_INGEST_URL` with a `Bearer` `LATEFYI_INGEST_TOKEN`, logging an error if the response is not ok (docs/archive/latefyi-prd.md:1098-1129). `wrangler.toml` configures the route `*@late.fyi` to this worker and the secrets `ALLOWED_SENDERS`, `LATEFYI_INGEST_URL`, `LATEFYI_INGEST_TOKEN` (docs/archive/latefyi-prd.md:1133-1133).
 
 ## Testing strategy
 
