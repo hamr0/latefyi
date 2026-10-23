@@ -10,6 +10,14 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.18.1 — pulselog mail delivery fix + ingest behind Cloudflare (2026-10-23)
+
+PRD → 1.18.1.
+
+### Fixed
+
+- **Weekly stats digest + health alerts never sent (since 0.18.0).** Both pulselog units ran with `NoNewPrivileges=true` + `ProtectSystem=strict`; pulselog mails via `mailx` → `postdrop`, which is setgid `postdrop` and writes `/var/spool/postfix/maildrop`. The sandbox disabled setgid and made the spool read-only, so every send failed (`postdrop: mail_queue_enter: … Permission denied`, retried every 10s for ~32h per run) while the unit still exited `0/SUCCESS` and `stats.jsonl` kept growing — no digest arrived Sep 20 → Oct 18. The July alert-path validation ran by hand as root, outside the sandbox, so it missed this. Fix: `SupplementaryGroups=postdrop` + `/var/spool/postfix/maildrop` in `ReadWritePaths` (hardening kept). Verified 2026-10-23 by running the digest under systemd: DKIM-signed, `status=sent` to Gmail. pulselog's lack of a delivery timeout / failure signal is reported upstream, not patched here.
+
 ### Changed
 
 - **Agent/IDE scratch gitignored and de-tracked.** `.gitignore` now default-denies every dot-directory (`.*/`), re-admitting only what ships (`.github/`). Per-machine agent/IDE state (`.claude/`, `.litectx/`, `.idea/`, …) regenerates locally and only added noise and churn; any already-committed copies are removed from tracking (local files kept on disk). Repo hygiene only.

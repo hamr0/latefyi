@@ -17,7 +17,11 @@ Nice=10
 
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/latefyi
+# pulselog mails via mailx -> postdrop, which is setgid postdrop and writes the
+# maildrop spool. NoNewPrivileges disables setgid, so grant the group directly
+# and open the spool, or every alert fails silently (postdrop: Permission denied).
+SupplementaryGroups=postdrop
+ReadWritePaths=/opt/latefyi /var/spool/postfix/maildrop
 ProtectHome=true
 PrivateTmp=true
 

@@ -19,7 +19,9 @@ Nice=10
 
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/latefyi
+# Same mail path as latefyi-health.service: grant postdrop + the maildrop spool.
+SupplementaryGroups=postdrop
+ReadWritePaths=/opt/latefyi /var/spool/postfix/maildrop
 ProtectHome=true
 PrivateTmp=true
 

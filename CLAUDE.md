@@ -88,5 +88,5 @@ Outbound replies have `From: noreply@late.fyi` (worker drops `noreply@`) and `Re
 <!-- AGENT_RULES:START -->
 Consult when building something new or adding a feature — a standards guide, not hot
 context like MEMORY.md above:
-@.claude/remember/AGENT_RULES.md
+.claude/remember/AGENT_RULES.md
 <!-- AGENT_RULES:END -->
