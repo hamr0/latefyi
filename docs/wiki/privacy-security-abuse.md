@@ -58,7 +58,7 @@ On a terminal event (arrival, STOP, cancellation, tracking-lost) the `active/<ms
 
 `CHANNELS` handling:
 
-- `CHANNELS ntfy` or `CHANNELS both`: update `channel`. If `ntfy_opt_in_sent_at` is null, send the QR/URL opt-in reply (see §7) and set it to now; if already set, just confirm the change and don't resend the QR. (docs/archive/latefyi-prd.md:923-926)
+- `CHANNELS ntfy` or `CHANNELS both` (ntfy is paused: `handleConfig` in `src/server.js` forces `channel = "email"` and replies "ntfy delivery is paused"; the opt-in flow below is the original design and is not currently sent): update `channel`. If `ntfy_opt_in_sent_at` is null, send the QR/URL opt-in reply (see §7) and set it to now; if already set, just confirm the change and don't resend the QR. (docs/archive/latefyi-prd.md:923-926)
 - `CHANNELS email`: set `channel = "email"`. The ntfy topic stays in the file so re-opting in is instant. (docs/archive/latefyi-prd.md:928-930)
 
 ### Why files, not a database

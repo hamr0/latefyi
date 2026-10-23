@@ -52,7 +52,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 
 - HAFAS endpoint down (both ÖBB and PKP): retry 3x, then push "Lost tracking for RE19750, data source unavailable" (docs/archive/latefyi-prd.md:778-778).
 - Parser or validator failure: reply with an error, no state file written (docs/archive/latefyi-prd.md:779-780).
-- Disambiguation timeout (3 retries, 24h, or poll_start_time minus 5 min): the parked `pending-disambig/` record expires after 24h (lazy expiry on read) and is deleted; a later reply to it is dropped silently, with no timeout reply and no `done/` copy (docs/archive/latefyi-prd.md:781-781).
+- Disambiguation timeout (24h; the original PRD's 3-retry cap and `poll_start_time` minus 5 min cutoff are not implemented): the parked `pending-disambig/` record expires after 24h (lazy expiry on read) and is deleted; a later reply to it is dropped silently, with no timeout reply and no `done/` copy (docs/archive/latefyi-prd.md:781-781).
 - There is no `errors/` archive: a malformed `active/` record is logged and deleted. No retry except HAFAS 5xx (docs/archive/latefyi-prd.md:783-783).
 
 ## Architecture
