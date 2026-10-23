@@ -10,6 +10,17 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.18.2 — docs reorg: PRD and runbook split into product/wiki pages (2026-10-23)
+
+PRD → 1.18.2. Docs-only; no code or behaviour change.
+
+### Changed
+
+- **`docs/` reorganised by the docs-builder first run** into `product/` (core pages), `wiki/` (themed pages) and `archive/` (originals), with a new `docs/index.md` (page map) and `docs/log.md` (change log), plus a `CLAUDE.md` pointer to the index. `docs/README.md` is rewritten as a map of the new layout (the old one described the removed `00-context`..`04-process` directories).
+- **The 1755-line PRD split** into a core page, `docs/product/latefyi-prd.md` (keeps the `Version`/`Status` header), and 8 themed `docs/wiki/` pages. The original is archived unchanged at `docs/archive/latefyi-prd.md`.
+- **The Cloudflare + VPS runbook moved to `docs/product/`** and split into a core page plus 6 step pages. The original is archived unchanged at `docs/archive/cloudflare-setup.md`.
+- **Known caveat:** the split pages restate the old PRD/runbook text verbatim, including passages already known to be stale (the `done/` archive, ntfy opt-in, SMTP relay). Those are tracked separately and not corrected here.
+
 ## 0.18.1 — pulselog mail delivery fix + ingest behind Cloudflare (2026-10-23)
 
 PRD → 1.18.1.
