@@ -53,7 +53,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 - HAFAS endpoint down: each failed poll increments `consecutivePollFailures`; at 6 consecutive failures the poller emits an urgent "Lost tracking for <line>" event and the record is deleted (`MAX_CONSECUTIVE_FAILURES = 6`, src/poll.js:109,127). There is no mid-poll ÖBB-to-PKP switch: the endpoint is fixed at resolve time (`endpointInUse`, src/schedule.js:106; src/poll-runner.js:105). The original PRD said "retry 3x" (docs/archive/latefyi-prd.md:778-778).
 - Parser or validator failure: reply with an error, no state file written (docs/archive/latefyi-prd.md:779-780).
 - Disambiguation timeout (24h; the original PRD's 3-retry cap and `poll_start_time` minus 5 min cutoff are not implemented): the parked `pending-disambig/` record expires after 24h (lazy expiry on read) and is deleted; a later reply to it is dropped silently, with no timeout reply and no `done/` copy (docs/archive/latefyi-prd.md:781-781).
-- There is no `errors/` archive: a malformed `active/` record is logged and deleted. No retry except HAFAS 5xx (docs/archive/latefyi-prd.md:783-783).
+- There is no `errors/` archive: a malformed `active/` record is logged and deleted (src/poll-runner.js:83). There is no HAFAS 5xx-specific retry: any failed poll is simply retried on the next tick until the 6-failure limit (src/poll.js:109) (docs/archive/latefyi-prd.md:783-783).
 
 ## Architecture
 
@@ -61,7 +61,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 
 1. Cloudflare Email Worker (edge): receives email, validates sender, posts JSON to the Node service (docs/archive/latefyi-prd.md:791-791).
 2. Node service (VPS or home server): parser, resolver, scheduler, poller, push dispatcher (docs/archive/latefyi-prd.md:792-792).
-3. ntfy app on the phone, subscribed to the user's private topic (docs/archive/latefyi-prd.md:793-793).
+3. ntfy app on the phone, subscribed to the user's private topic (paused: ntfy is off via `NTFY_ENABLED`, all delivery is email) (docs/archive/latefyi-prd.md:793-793).
 4. Cron (`wake.sh`) activating due requests every minute (docs/archive/latefyi-prd.md:794-794).
 5. File system: `pending/`, `active/` (plus `users/` and `pending-disambig/`) as the only state store; terminal records are deleted, not archived (docs/archive/latefyi-prd.md:795-795).
 
@@ -73,7 +73,7 @@ The tree as built (`git ls-files`); the PRD's plan (docs/archive/latefyi-prd.md:
 - `src/` daemons and edges: `server.js` (inbound orchestrator), `ingest-server.js` (HTTP `/ingest`), `poll-runner.js` (poll daemon), `smtp-transport.js` (nodemailer), `ntfy-transport.js` (paused), `auth-results.js` (`dmarc=fail` check).
 - `config/`: `aliases.json` (station aliases), `disposable-domains.txt` (blocklist). Both tracked.
 - `bin/stats.js`: counts-only JSON for the pulselog weekly digest.
-- `scripts/`: `wake.sh`, `deploy.sh`, `vps.sh`, `install-units.sh`, `stats.sh`, `stats-email.sh`, `refresh-disposable-domains.sh`, `cron-refresh-disposable.sh`, `dump-email-samples.js`.
+- `scripts/`: `wake.sh`, `deploy.sh`, `vps.sh`, `install-units.sh`, `stats.sh`, `stats-email.sh`, `refresh-disposable-domains.sh`, `cron-refresh-disposable.sh`, `dump-email-samples.js`, plus two tracked exploratory scripts `poc-line-names.js` and `poc-multi-source.js`.
 - `worker/`: `index.js` (Cloudflare Email Worker), `wrangler.toml` (reference only), `README.md`.
 - `state/`: `users/`, `pending/`, `active/`, `pending-disambig/`. No `done/` or `errors/`: terminal records are deleted.
 - `logs/`: `push.jsonl` (senderHash only) and `errors.jsonl` (flightlog) are what the code writes; the PRD's `audit.jsonl` and `disagreement.log` are not implemented.
