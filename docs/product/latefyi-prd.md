@@ -14,7 +14,7 @@ sources:
 
 Outstanding: 30-day soak.
 
-See `CHANGELOG.md` for the full revision history. See `docs/wiki/cloudflare-setup.md` for the operator deployment runbook.
+See `CHANGELOG.md` for the full revision history. See `docs/product/cloudflare-setup.md` for the operator deployment runbook.
 **Owner:** Amr
 **Intended developer:** Claude (Sonnet 4.6+ recommended for implementation)
 
