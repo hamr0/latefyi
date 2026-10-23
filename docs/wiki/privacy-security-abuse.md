@@ -30,7 +30,7 @@ Sender allowlist and authentication, what is stored, and the storage schema that
 
 - **No PII beyond email + train number**: state files hold sender email and train metadata only. No location tracking, payment info or booking references. (docs/archive/latefyi-prd.md:1324-1324)
 - **No telemetry, no analytics, no remote sinks.** All logs are local. (docs/archive/latefyi-prd.md:1327-1327)
-- **Audit log** (`logs/audit.jsonl`): one JSONL line per state transition, for forensic debugging only. (docs/archive/latefyi-prd.md:1328-1328)
+- **Audit log** (`logs/audit.jsonl`): specified in the original PRD but not implemented; `logs/push.jsonl` (senderHash only) is the event log. (docs/archive/latefyi-prd.md:1328-1328)
 - **Outbound traffic** is limited to HAFAS endpoints, the ntfy server (paused) and outbound mail through the VPS's own postfix + opendkim; to be documented in the README for transparency. (docs/archive/latefyi-prd.md:1329-1329)
 - **Token storage**: secrets live in environment variables, never in committed files; `.env` is in `.gitignore`. (docs/archive/latefyi-prd.md:1330-1330)
 

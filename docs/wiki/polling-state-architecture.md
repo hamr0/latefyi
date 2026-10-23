@@ -74,7 +74,7 @@ The PRD's layout (docs/archive/latefyi-prd.md:799-836):
 - `scripts/`: `wake.sh`, `setup-ntfy.sh`, `test-email.sh`.
 - `worker/`: `wrangler.toml`, `index.js` (Cloudflare Email Worker).
 - `state/`: `users/` (per-user lifetime state), `pending/`, `active/`, `pending-disambig/`. No `done/` or `errors/`: terminal records are deleted.
-- `logs/`: `audit.jsonl` (one line per state transition), `disagreement.log` (primary vs fallback diffs), `push.jsonl` (one line per push attempt).
+- `logs/`: `push.jsonl` (one line per push attempt, senderHash only) and `errors.jsonl` (flightlog) are what the code writes; the PRD's `audit.jsonl` and `disagreement.log` are not implemented.
 
 `package.json` declares `hafas-client` only (docs/archive/latefyi-prd.md:801-801).
 
@@ -151,7 +151,7 @@ All updates write to `<file>.tmp` then rename; no locking is needed at this scal
 
 Run by cron every minute (`* * * * * /opt/latefyi/scripts/wake.sh`) (docs/archive/latefyi-prd.md:1092-1092). As specified, it (docs/archive/latefyi-prd.md:1070-1089):
 
-- Moves each `state/pending/*.json` whose `schedule.poll_start_time` is due into `state/active/` and logs it to `logs/audit.jsonl`.
+- Moves each `state/pending/*.json` whose `schedule.poll_start_time` is due into `state/active/` and echoes a line to stdout (cron appends it to `logs/wake.log`); no `audit.jsonl` is written.
 - Does not prune or spawn anything: there is no `done/` to prune, and the poll-runner daemon is owned by systemd (`wake.sh` only activates due records).
 
 ### `worker/index.js` (13.9)
