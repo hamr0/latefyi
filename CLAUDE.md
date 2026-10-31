@@ -5,11 +5,12 @@ Email-driven European train tracker. User emails `<TRAINNUM>@late.fyi`, gets ema
 ## Run
 
 - `npm test` — node:test (built-in, no jest). Tests stay offline; no real HAFAS calls.
-- Baseline: 233 tests pass in ~1s.
+- Baseline: 278 tests pass in ~4s.
+- CI (`.github/workflows/ci.yml`): `npm ci` → `npm test` on every push/PR, Node 22 (`engines` `>=22`); read-only `contents` permission, no secrets.
 
 ## Architecture (one path through the system)
 
-`*@late.fyi` → CF Email Worker (`worker/index.js`) → POST /ingest on VPS → `src/server.js handleInbound` → parse / resolve / schedule → `state/pending/<msgid>.json` → `scripts/wake.sh` cron → `state/active/` → `src/poll-runner.js` → diff → `src/push.js` → SMTP (postfix on VPS) → terminal → `state/done/` (sender scrubbed).
+`*@late.fyi` → CF Email Worker (`worker/index.js`) → POST /ingest on VPS → `src/server.js handleInbound` → parse / resolve / schedule → `state/pending/<msgid>.json` → `scripts/wake.sh` cron → `state/active/` → `src/poll-runner.js` → diff → `src/push.js` → SMTP (postfix on VPS) → terminal → record deleted (no `done/` archive).
 
 ## Two Workers, often confused
 
