@@ -1,0 +1,22 @@
+# Push / PR gate: npm ci -> test. No typecheck/build step yet (plain JS, no tsc; web/ is static).
+# Tests are hermetic and token-free (fake HAFAS / transport / fetch).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
