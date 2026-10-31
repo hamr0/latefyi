@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { senderHash, ntfyTopic, getOrCreate, setChannel, incrementTrainCount, incrementCompletedCount, recordRequest, checkRateLimit, checkActionRateLimit, recordAction } from '../src/users.js';
+import { senderHash, getOrCreate, incrementTrainCount, incrementCompletedCount, recordRequest, checkRateLimit, checkActionRateLimit, recordAction } from '../src/users.js';
 
 const td = () => mkdtempSync(join(tmpdir(), 'latefyi-users-'));
 
@@ -46,21 +46,17 @@ test('senderHash is case-insensitive on email', () => {
   assert.equal(senderHash('Amr@Example.COM'), senderHash('amr@example.com'));
 });
 
-test('ntfyTopic uses the prefix and hash', () => {
-  const t = ntfyTopic('amr@example.com');
-  assert.match(t, /^latefyi-[a-f0-9]{16}$/);
-});
-
 // ===== getOrCreate =====
 
 test('getOrCreate creates default record on first call', () => {
   const dir = td();
   const r = getOrCreate('amr@example.com', dir);
   assert.equal(r.sender_email, 'amr@example.com');
-  assert.equal(r.channel, 'email');
-  assert.equal(r.ntfy_opt_in_sent_at, null);
   assert.equal(r.trains_tracked_count, 0);
-  assert.match(r.ntfy_topic, /^latefyi-[a-f0-9]{16}$/);
+  // ntfy-era fields are no longer written for new records.
+  assert.equal('channel' in r, false);
+  assert.equal('ntfy_topic' in r, false);
+  assert.equal('ntfy_opt_in_sent_at' in r, false);
 
   // Persisted to disk
   const path = join(dir, 'users', `${r.sender_hash}.json`);
@@ -81,36 +77,18 @@ test('getOrCreate returns existing record on second call (no overwrite)', () => 
   assert.equal(r2.sender_hash, r1.sender_hash);
 });
 
-// ===== setChannel + first-ntfy-opt-in flag =====
+// ===== old records tolerated =====
 
-test('setChannel email→ntfy: first time fires opt-in flag', () => {
+test('getOrCreate tolerates a pre-0.19.0 record that still has ntfy-era fields', () => {
   const dir = td();
-  getOrCreate('amr@example.com', dir);
-  const { record, wasFirstNtfyOptIn } = setChannel('amr@example.com', 'ntfy', dir);
-  assert.equal(wasFirstNtfyOptIn, true);
-  assert.equal(record.channel, 'ntfy');
-  assert.ok(record.ntfy_opt_in_sent_at);
-});
-
-test('setChannel ntfy→both keeps opt-in flag false (already sent)', () => {
-  const dir = td();
-  setChannel('amr@example.com', 'ntfy', dir); // first
-  const { wasFirstNtfyOptIn } = setChannel('amr@example.com', 'both', dir); // second
-  assert.equal(wasFirstNtfyOptIn, false);
-});
-
-test('setChannel ntfy→email→ntfy keeps opt-in flag false on re-opt-in', () => {
-  const dir = td();
-  setChannel('amr@example.com', 'ntfy', dir);
-  setChannel('amr@example.com', 'email', dir);
-  const { wasFirstNtfyOptIn, record } = setChannel('amr@example.com', 'ntfy', dir);
-  assert.equal(wasFirstNtfyOptIn, false);
-  assert.equal(record.channel, 'ntfy');
-});
-
-test('setChannel rejects invalid channel', () => {
-  const dir = td();
-  assert.throws(() => setChannel('amr@example.com', 'telegram', dir), /invalid channel/);
+  const fresh = getOrCreate('amr@example.com', dir);
+  const path = join(dir, 'users', `${fresh.sender_hash}.json`);
+  writeFileSync(path, JSON.stringify({ ...fresh, channel: 'ntfy', ntfy_topic: 'latefyi-old', ntfy_opt_in_sent_at: '2026-05-01T00:00:00Z' }));
+  const r = getOrCreate('amr@example.com', dir);
+  assert.equal(r.channel, 'ntfy'); // left untouched
+  const bumped = incrementTrainCount('amr@example.com', dir);
+  assert.equal(bumped.trains_tracked_count, 1);
+  assert.equal(bumped.ntfy_topic, 'latefyi-old');
 });
 
 // ===== incrementTrainCount =====

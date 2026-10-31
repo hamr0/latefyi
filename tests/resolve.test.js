@@ -65,7 +65,7 @@ const oebbHappy = () => fakeClient({
 
 test('Mode B: ICE145 from Amsterdam to Berlin Ostbahnhof → resolved on oebb', async () => {
   const r = await resolve({
-    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Ostbahnhof', trip: null, channels: null, inReplyTo: null },
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Ostbahnhof', trip: null, inReplyTo: null },
     primaryClient: oebbHappy(),
   });
   assert.equal(r.kind, 'resolved');
@@ -80,7 +80,7 @@ test('Mode B: ICE145 from Amsterdam to Berlin Ostbahnhof → resolved on oebb', 
 
 test('Mode B: From only (no To) → resolves To as terminus', async () => {
   const r = await resolve({
-    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: null, trip: null, channels: null },
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: null, trip: null },
     primaryClient: oebbHappy(),
   });
   assert.equal(r.kind, 'resolved');
@@ -92,7 +92,7 @@ test('Mode B: From only (no To) → resolves To as terminus', async () => {
 
 test('Mode A: ICE145 picking up at Berlin Ostbahnhof', async () => {
   const r = await resolve({
-    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'A', from: null, to: 'Berlin Ostbahnhof', trip: null, channels: null },
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'A', from: null, to: 'Berlin Ostbahnhof', trip: null },
     primaryClient: oebbHappy(),
   });
   assert.equal(r.kind, 'resolved');
@@ -105,7 +105,7 @@ test('Mode A: ICE145 picking up at Berlin Ostbahnhof', async () => {
 test('alias: user types "Berlin" → resolves uniquely on this route to Berlin Ostbahnhof? — actually ambiguous', async () => {
   // Route has both Berlin Hbf and Berlin Ostbahnhof, so "Berlin" is genuinely ambiguous.
   const r = await resolve({
-    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin', trip: null, channels: null },
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin', trip: null },
     primaryClient: oebbHappy(),
   });
   assert.equal(r.kind, 'disambiguation_needed');
@@ -121,7 +121,7 @@ test('typo on the To: field within Levenshtein → resolves silently via matchSt
   // matchStation against the route. "Berlin Osthbanhof" is a 1-char swap of
   // "Berlin Ostbahnhof" → token-level Lev fixes it.
   const r = await resolve({
-    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Osthbanhof', trip: null, channels: null },
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Osthbanhof', trip: null },
     primaryClient: oebbHappy(),
   });
   assert.equal(r.kind, 'resolved');
@@ -181,16 +181,16 @@ test('primary returns nothing, fallback finds train → endpoint=pkp', async () 
   assert.equal(r.endpoint, 'pkp');
 });
 
-// ===== Trip tag and channels carry through =====
+// ===== Trip tag carries through =====
 
-test('parsed.trip and parsed.channels are preserved on resolved result', async () => {
+test('parsed.trip is preserved on resolved result', async () => {
   const r = await resolve({
-    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Ostbahnhof', trip: 'rome-2026', channels: 'both' },
+    parsed: { kind: 'track', trainNum: 'ICE145', mode: 'B', from: 'Amsterdam Centraal', to: 'Berlin Ostbahnhof', trip: 'rome-2026' },
     primaryClient: oebbHappy(),
   });
   assert.equal(r.kind, 'resolved');
   assert.equal(r.trip, 'rome-2026');
-  assert.equal(r.channels, 'both');
+  assert.equal('channels' in r, false);
 });
 
 test('parsed.onDate passes when=<Date> through to client.departures', async () => {

@@ -46,13 +46,11 @@ function readJson(path) {
 //   logDir         path
 //   getClient      (endpointName: string) → hafasClient
 //   now            ms (defaults to Date.now())
-//   transport?     { sendEmail, sendNtfy } — when present, events are
+//   transport?     { sendEmail } — when present, events are
 //                  ALSO dispatched to the user via push.dispatch.
 //                  When absent (default), only the audit log is written.
-//   getUserChannel?  (sender: string) → 'email'|'ntfy'|'both'
-//                  Required if transport is provided. Looks up per-user pref.
 //
-export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, getUserChannel = null, operatorEmail = null, ntfyEnabled = false, capture = () => {} }) {
+export async function tick({ stateDir, logDir, getClient, now = Date.now(), transport = null, operatorEmail = null, capture = () => {} }) {
   ensureDirs(stateDir, logDir);
   const activeDir = join(stateDir, 'active');
   const pushLog = join(logDir, 'push.jsonl');
@@ -140,25 +138,17 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
     // through push.dispatch. The audit log above is independent of delivery
     // success — it always records what *would* have been sent.
     //
-    // Retry semantics: events whose email/ntfy send fails are stashed in
+    // Retry semantics: events whose email send fails are stashed in
     // record.state.pendingDeliveries and re-attempted on the next tick. Each
     // event has its own attempt counter; after MAX_DELIVERY_ATTEMPTS we drop
     // it with a loud error log (the audit row in push.jsonl already exists).
     let updatedRecord = result.updatedRecord;
     const pending = (record.state?.pendingDeliveries || []);
     const eventsToSend = [...pending.map(p => p.event), ...result.events];
-    if (transport && getUserChannel && eventsToSend.length > 0) {
-      // ntfy is deferred. `ntfyEnabled` (default false) is the single source of
-      // truth for the pause: dispatch strips ntfy from EVERY result, including
-      // the critical-event override that would otherwise publish cancellations
-      // to the public, email-derivable ntfy topic. To un-pause, set
-      // NTFY_ENABLED=true at the CLI — the per-user channel preference below
-      // then takes effect again.
-      const userChannel = ntfyEnabled ? (getUserChannel(record.sender) || 'email') : 'email';
+    if (transport && eventsToSend.length > 0) {
       const dispatchResults = await dispatch({
         events: eventsToSend,
         sender: record.sender,
-        userChannel,
         line: record.resolved?.line,
         trainNum: record.request.trainNum,
         trip: record.resolved?.trip,
@@ -167,8 +157,6 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
           : record.resolved?.schedule?.scheduledDeparture,
         confirmationMsgid: record.confirmationMsgid,
         transport,
-        ntfyFailureCounter: record.state?.ntfyFailureCounter || 0,
-        ntfyEnabled,
       });
 
       const newPending = [];
@@ -211,12 +199,10 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
         newPending.push({ event: dr.event, attempts });
       }
 
-      const lastStreak = dispatchResults.length ? dispatchResults[dispatchResults.length - 1].ntfyFailStreak : 0;
       updatedRecord = {
         ...updatedRecord,
         state: {
           ...updatedRecord.state,
-          ntfyFailureCounter: lastStreak,
           pendingDeliveries: newPending,
         },
       };
@@ -242,10 +228,10 @@ export async function tick({ stateDir, logDir, getClient, now = Date.now(), tran
 }
 
 // Long-running entry point. Calls tick() at intervalMs cadence.
-export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, getUserChannel = null, operatorEmail = null, now = null, ntfyEnabled = false, capture = () => {} }) {
+export async function run({ stateDir, logDir, getClient, intervalMs = 5_000, signal, transport = null, operatorEmail = null, now = null, capture = () => {} }) {
   while (!signal?.aborted) {
     try {
-      const s = await tick({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled, capture, now: now ?? Date.now() });
+      const s = await tick({ stateDir, logDir, getClient, transport, operatorEmail, capture, now: now ?? Date.now() });
       if (s.polled || s.events || s.terminal || s.errors) {
         console.log(`[poll-runner] ${new Date().toISOString()} polled=${s.polled} events=${s.events} terminal=${s.terminal} errors=${s.errors} skipped=${s.skipped}`);
       }
@@ -292,13 +278,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   const getClient = (name) => profiles[name] || null;
 
-  // Compose transports: SMTP for email pushes, ntfy for push pushes.
-  // Either may be absent (dry-run for missing leg).
-  let transport = null;
-  let getUserChannel = null;
+  // Transport: SMTP for email pushes. Without SMTP_HOST, sends throw (dry-run).
   const sendEmailFn = async () => { throw new Error('email not configured'); };
-  const sendNtfyFn = async () => { throw new Error('ntfy not configured'); };
-  let smtp = null, ntfy = null;
+  let smtp = null;
   if (process.env.SMTP_HOST) {
     const { createSmtpTransport } = await import('./smtp-transport.js');
     smtp = createSmtpTransport({
@@ -310,29 +292,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
     console.log(`[poll-runner] SMTP: ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 587}`);
   }
-  {
-    const { createNtfyTransport } = await import('./ntfy-transport.js');
-    ntfy = createNtfyTransport({ baseUrl: process.env.NTFY_BASE_URL || 'https://ntfy.sh' });
-    console.log(`[poll-runner] ntfy: ${process.env.NTFY_BASE_URL || 'https://ntfy.sh'}`);
-  }
-  transport = {
+  const transport = {
     sendEmail: smtp ? smtp.sendEmail.bind(smtp) : sendEmailFn,
-    sendNtfy: ntfy ? ntfy.sendNtfy.bind(ntfy) : sendNtfyFn,
   };
-
-  // Per-user channel preference lookup.
-  const { getOrCreate } = await import('./users.js');
-  getUserChannel = (sender) => getOrCreate(sender, stateDir).channel || 'email';
 
   const operatorEmail = process.env.OPERATOR_EMAIL || null;
   if (operatorEmail) console.log(`[poll-runner] operator alerts → ${operatorEmail}`);
   else console.warn('[poll-runner] OPERATOR_EMAIL not set — dropped events will only be visible in logs');
 
-  // ntfy push is paused unless explicitly enabled. While off, NO event —
-  // including cancellations — is published to the public ntfy topic.
-  const ntfyEnabled = (process.env.NTFY_ENABLED || '').toLowerCase() === 'true';
-  console.log(`[poll-runner] ntfy push: ${ntfyEnabled ? 'ENABLED' : 'paused (NTFY_ENABLED!=true)'}`);
-
   console.log(`[poll-runner] starting; stateDir=${stateDir} logDir=${logDir}`);
-  await run({ stateDir, logDir, getClient, transport, getUserChannel, operatorEmail, ntfyEnabled, capture });
+  await run({ stateDir, logDir, getClient, transport, operatorEmail, capture });
 }

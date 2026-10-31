@@ -22,7 +22,6 @@ const resolvedFixture = (overrides = {}) => ({
   from: 'Amsterdam Centraal',
   to: 'Berlin Ostbahnhof',
   trip: null,
-  channels: null,
   route: ['Amsterdam Centraal', 'Hilversum', 'Hannover Hbf', 'Berlin Hbf', 'Berlin Ostbahnhof'],
   schedule: {
     scheduledDeparture: '2026-04-29T10:00:00+02:00',
@@ -38,7 +37,6 @@ const parsedFixture = (overrides = {}) => ({
   from: 'Amsterdam Centraal',
   to: 'Berlin Ostbahnhof',
   trip: null,
-  channels: null,
   inReplyTo: null,
   ...overrides,
 });
@@ -99,14 +97,14 @@ test('record shape matches PRD §12 (request, resolved, schedule, state, pushes)
   assert.deepEqual(rec.pushes, []);
 });
 
-test('trip and channels carried through to record.request', () => {
+test('trip carried through to record.request', () => {
   const dir = td();
   const rec = schedule(args({
     stateDir: dir,
-    parsed: parsedFixture({ trip: 'rome-2026', channels: 'both' }),
+    parsed: parsedFixture({ trip: 'rome-2026' }),
   }));
   assert.equal(rec.request.trip, 'rome-2026');
-  assert.equal(rec.request.channels, 'both');
+  assert.equal('channels' in rec.request, false);
 });
 
 // ===== file safety =====

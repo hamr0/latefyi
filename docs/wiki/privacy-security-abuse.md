@@ -31,20 +31,14 @@ Sender allowlist and authentication, what is stored, and the storage schema that
 - **No PII beyond email + train number**: state files hold sender email and train metadata only. No location tracking, payment info or booking references. (docs/archive/latefyi-prd.md:1324-1324)
 - **No telemetry, no analytics, no remote sinks.** All logs are local. (docs/archive/latefyi-prd.md:1327-1327)
 - **Audit log** (`logs/audit.jsonl`): specified in the original PRD but not implemented; `logs/push.jsonl` (senderHash only) is the event log. (docs/archive/latefyi-prd.md:1328-1328)
-- **Outbound traffic** is limited to HAFAS endpoints, the ntfy server (paused) and outbound mail through the VPS's own postfix + opendkim; to be documented in the README for transparency. (docs/archive/latefyi-prd.md:1329-1329)
+- **Outbound traffic** is limited to HAFAS endpoints and outbound mail through the VPS's own postfix + opendkim; to be documented in the README for transparency. (docs/archive/latefyi-prd.md:1329-1329)
 - **Token storage**: secrets live in environment variables, never in committed files; `.env` is in `.gitignore`. (docs/archive/latefyi-prd.md:1330-1330)
-
-## ntfy topic derivation
-
-- The topic is `sha256(sender_email)[:16]`. It does not reveal the email, but it is derivable by anyone who knows the address, and ntfy.sh public topics have no auth, so a derived topic can be read or spammed. (docs/archive/latefyi-prd.md:1326-1326)
-- Mitigated today because ntfy is fully paused: `NTFY_ENABLED` (default off) strips ntfy from every dispatch result, including the critical-event override that would otherwise publish cancellations to the topic regardless of preference. (docs/archive/latefyi-prd.md:1326-1326)
-- Before un-pausing, mix a per-user secret into the topic (or use ntfy auth). (docs/archive/latefyi-prd.md:1326-1326)
 
 ## Storage schema
 
 ### `pending/<msgid>.json` and `active/<msgid>.json`
 
-A single JSON record per request holds: `msgid`, `received_at`, `sender`, `request` (`trainNum`, `mode`, `from`, `to`, `channels`), `resolved` (`endpoint`, `trainId`, `scheduledDeparture`, `scheduledArrivalAtTo`, `route`), `schedule` (`poll_start_time`, `poll_end_time`), `state` (`phase`, `lastPolledAt`, `lastPushedSnapshot`, `consecutivePollFailures`, `endpointInUse`) and `pushes`. A new record starts at `phase: "PRE_DEPARTURE"` with no polls and an empty `pushes` list. (docs/archive/latefyi-prd.md:863-897)
+A single JSON record per request holds: `msgid`, `received_at`, `sender`, `request` (`trainNum`, `mode`, `from`, `to`), `resolved` (`endpoint`, `trainId`, `scheduledDeparture`, `scheduledArrivalAtTo`, `route`), `schedule` (`poll_start_time`, `poll_end_time`), `state` (`phase`, `lastPolledAt`, `lastPushedSnapshot`, `consecutivePollFailures`, `endpointInUse`) and `pushes`. A new record starts at `phase: "PRE_DEPARTURE"` with no polls and an empty `pushes` list. (docs/archive/latefyi-prd.md:863-897)
 
 ### No `done/` archive
 
@@ -52,14 +46,9 @@ On a terminal event (arrival, STOP, cancellation, tracking-lost) the `active/<ms
 
 ### `state/users/<sender_hash>.json` (per-user, lifetime)
 
-- One file per allowlisted sender, created lazily on first email and updated on `CHANNELS` reconfiguration. The hash is `sha256(sender_email)[:16]`, the same derivation as the ntfy topic suffix, so the topic is implicit in the filename. (docs/archive/latefyi-prd.md:903-905)
-- Fields: `sender_hash`, `sender_email`, `channel`, `ntfy_topic`, `ntfy_opt_in_sent_at`, `first_seen_at`, `last_seen_at`, `trains_tracked_count`, `trains_completed_count`. (docs/archive/latefyi-prd.md:907-919)
+- One file per allowlisted sender, created lazily on first email. The hash is `sha256(sender_email)[:16]`. (docs/archive/latefyi-prd.md:903-905)
+- Fields: `sender_hash`, `sender_email`, `first_seen_at`, `last_seen_at`, `trains_tracked_count`, `trains_completed_count`, plus the rate-limit windows. Records written before 0.19.0 may still carry `channel`, `ntfy_topic` and `ntfy_opt_in_sent_at` (ntfy was removed in 0.19.0); they are ignored and never rewritten. (docs/archive/latefyi-prd.md:907-919)
 - `trains_tracked_count` counts trips ever scheduled (bumped on each track request). `trains_completed_count` counts trips that ran to a terminal end (arrival / STOP / cancellation / tracking-lost), bumped by the poll-runner at both delete sites as the active record is unlinked. The pair feeds the weekly digest's growth metrics; see §21 Observability. (docs/archive/latefyi-prd.md:921-921)
-
-`CHANNELS` handling:
-
-- `CHANNELS ntfy` or `CHANNELS both` (ntfy is paused: `handleConfig` in `src/server.js` forces `channel = "email"` and replies "ntfy delivery is paused"; the opt-in flow below is the original design and is not currently sent): update `channel`. If `ntfy_opt_in_sent_at` is null, send the QR/URL opt-in reply (see §7) and set it to now; if already set, just confirm the change and don't resend the QR. (docs/archive/latefyi-prd.md:923-926)
-- `CHANNELS email`: set `channel = "email"`. The ntfy topic stays in the file so re-opting in is instant. (docs/archive/latefyi-prd.md:928-930)
 
 ### Why files, not a database
 

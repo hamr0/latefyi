@@ -1,9 +1,10 @@
-// Per-user state: channel preference, derived ntfy topic, opt-in tracking.
+// Per-user state: counters, rate-limit windows. Files: state/users/<hash>.json.
 //
-// PRD §6 (channels), §12 (storage schema), §13.7a (this module).
+// PRD §12 (storage schema), §13.7a (this module).
 //
-// Hash is sha256(email)[:16] — stable, doesn't reveal the email but
-// derives the ntfy topic deterministically. Files: state/users/<hash>.json.
+// Hash is sha256(email)[:16] — stable, doesn't reveal the email.
+// Records written before 0.19.0 may still carry `channel`, `ntfy_topic` and
+// `ntfy_opt_in_sent_at` (ntfy was removed); they are ignored, never rewritten.
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
@@ -12,11 +13,6 @@ import { join } from 'node:path';
 export function senderHash(email) {
   if (!email) throw new Error('senderHash: email required');
   return createHash('sha256').update(email.trim().toLowerCase()).digest('hex').slice(0, 16);
-}
-
-
-export function ntfyTopic(email, prefix = 'latefyi-') {
-  return `${prefix}${senderHash(email)}`;
 }
 
 function userPath(stateDir, email) {
@@ -41,9 +37,6 @@ function defaultRecord(email) {
   return {
     sender_hash: hash,
     sender_email: email,
-    channel: 'email',
-    ntfy_topic: `latefyi-${hash}`,
-    ntfy_opt_in_sent_at: null,
     first_seen_at: now,
     last_seen_at: now,
     trains_tracked_count: 0,
@@ -73,21 +66,6 @@ export function getOrCreate(email, stateDir) {
   return rec;
 }
 
-// Update channel preference. Returns { record, wasFirstNtfyOptIn } so the
-// caller can decide whether to send the QR opt-in reply (only on first time).
-export function setChannel(email, channel, stateDir) {
-  if (!['email', 'ntfy', 'both'].includes(channel)) {
-    throw new Error(`setChannel: invalid channel "${channel}"`);
-  }
-  const rec = getOrCreate(email, stateDir);
-  const wasFirstNtfyOptIn = (channel === 'ntfy' || channel === 'both') && rec.ntfy_opt_in_sent_at === null;
-  rec.channel = channel;
-  if (wasFirstNtfyOptIn) rec.ntfy_opt_in_sent_at = new Date().toISOString();
-  rec.last_seen_at = new Date().toISOString();
-  atomicWrite(userPath(stateDir, email), rec);
-  return { record: rec, wasFirstNtfyOptIn };
-}
-
 // Bump train counter + last_seen. Called after a successful track request.
 export function incrementTrainCount(email, stateDir) {
   const rec = getOrCreate(email, stateDir);
@@ -115,7 +93,7 @@ export const DEFAULT_LIMITS = {
   perDay: 50,
   maxActiveTrains: 20,
   // Broad ceiling across ALL inbound commands per sender per hour (track,
-  // stop, list, config, reply, help, error). Far above any human usage; exists
+  // stop, list, reply, help, error). Far above any human usage; exists
   // only to cap backscatter amplification and repeated state scans from a
   // single sender. The track-specific perHour/perDay above are much tighter.
   perHourActions: 60,

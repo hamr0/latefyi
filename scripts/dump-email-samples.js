@@ -133,9 +133,6 @@ show('STOP confirmation (ALL)',
     sender, incomingMsgid,
   }));
 
-show('ntfy opt-in (after CHANNELS=ntfy)',
-  R.ntfyOptInReply({ topic: 'latefyi-abc123', sender, incomingMsgid }));
-
 show('generic error (resolver fallback)',
   R.genericErrorReply({
     trainNum, code: 'resolve_failed',

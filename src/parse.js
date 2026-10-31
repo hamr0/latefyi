@@ -10,17 +10,15 @@
 //   - `headers` optional; if present, headers['in-reply-to'] is read
 //
 // Output: one of
-//   { kind: "track",   trainNum, mode, from, to, trip, channels, inReplyTo? }
+//   { kind: "track",   trainNum, mode, from, to, trip, onDate, inReplyTo? }
 //   { kind: "stop",    scope: "this"|"single"|"trip"|"all", target, inReplyTo? }
-//   { kind: "config",  field: "channels", value: "email"|"ntfy"|"both", inReplyTo? }
 //   { kind: "reply",   inReplyTo, answer }      // reply to a prior outbound
 //   { kind: "help" }
 //   { kind: "error",   code, message }
 
 const TRAINNUM_RE = /^[A-Z]{0,4}\d{2,5}$/;
 const TRIP_RE     = /^[A-Za-z0-9_-]{1,32}$/;
-const RESERVED_LOCALPARTS = new Set(['config', 'stop', 'help', 'list']);
-const VALID_CHANNELS = new Set(['email', 'ntfy', 'both']);
+const RESERVED_LOCALPARTS = new Set(['stop', 'help', 'list']);
 
 // Forgiving header extractor. Matches `<keyword>` (with or without `:`),
 // captures the value lazily up to the next keyword, comma, or end of line.
@@ -29,7 +27,7 @@ const VALID_CHANNELS = new Set(['email', 'ntfy', 'both']);
 //   "from amsterdam to berlin ostbahnhof"
 //   "from amsterdam to paris nord on 2026-05-06"
 //   "From Amsterdam, To Berlin, On 2026-05-04"
-const HEADER_RE = /\b(from|to|trip|channels|on)\b[\s:]+([^,\n\r]+?)(?=\s+\b(?:from|to|trip|channels|on)\b|\s*[,\n\r]|\s*$)/gi;
+const HEADER_RE = /\b(from|to|trip|on)\b[\s:]+([^,\n\r]+?)(?=\s+\b(?:from|to|trip|on)\b|\s*[,\n\r]|\s*$)/gi;
 
 const MONTHS = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
@@ -163,14 +161,6 @@ function tryParseStop(src) {
   return { scope: 'this', target: null }; // garbage after STOP — treat as bare STOP
 }
 
-// Parse `CHANNELS <value>` from subject or body.
-function tryParseChannels(src) {
-  if (!src) return null;
-  const m = src.match(/CHANNELS\s+(email|ntfy|both)\b/i);
-  if (!m) return null;
-  return m[1].toLowerCase();
-}
-
 // ---- main parser ----
 
 export function parse(email) {
@@ -185,14 +175,6 @@ export function parse(email) {
 
   // 1. Reserved local-parts: route on the address, not the train regex.
   if (RESERVED_LOCALPARTS.has(localPart)) {
-    if (localPart === 'config') {
-      const channel = tryParseChannels(headerSrc);
-      if (!channel) {
-        return { kind: 'error', code: 'config_unrecognized',
-                 message: 'config@ requires `CHANNELS <email|ntfy|both>` in subject or body' };
-      }
-      return { kind: 'config', field: 'channels', value: channel, inReplyTo };
-    }
     if (localPart === 'stop') {
       const stop = tryParseStop(headerSrc);
       if (stop) return { kind: 'stop', ...stop, inReplyTo };
@@ -273,18 +255,7 @@ export function parse(email) {
     trip = headers.trip;
   }
 
-  // 8. Channels override (per-request only — caller merges with user pref).
-  let channels = null;
-  if (headers.channels) {
-    const c = headers.channels.toLowerCase();
-    if (!VALID_CHANNELS.has(c)) {
-      return { kind: 'error', code: 'invalid_channels',
-               message: `channels "${headers.channels}" must be one of: email, ntfy, both` };
-    }
-    channels = c;
-  }
-
-  // 9. Optional date for advance planning.
+  // 8. Optional date for advance planning.
   let onDate = null;
   if (headers.on) {
     const r = parseOnDate(headers.on);
@@ -302,7 +273,6 @@ export function parse(email) {
     from: headers.from || null,
     to: headers.to || null,
     trip,
-    channels,
     onDate,
     inReplyTo,
   };

@@ -296,9 +296,7 @@ test('run: transport is forwarded to tick() and sendEmail is called when events 
   const sent = [];
   const transport = {
     sendEmail: async (msg) => { sent.push(msg); },
-    sendNtfy: async () => {},
   };
-  const getUserChannel = () => 'email';
 
   const ac = new AbortController();
   const runPromise = run({
@@ -307,7 +305,6 @@ test('run: transport is forwarded to tick() and sendEmail is called when events 
     intervalMs: 0,
     signal: ac.signal,
     transport,
-    getUserChannel,
     now: new Date('2026-04-29T07:30:00Z').getTime(),
   });
   // Allow one tick to fire, then abort.
@@ -329,15 +326,13 @@ test('tick: failed sendEmail is queued under pendingDeliveries for next-tick ret
   let failNext = true;
   const transport = {
     sendEmail: async () => { if (failNext) throw new Error('econnrefused'); },
-    sendNtfy: async () => {},
   };
-  const getUserChannel = () => 'email';
 
   // Tick 1: event generated, send fails → should land on pendingDeliveries.
   await tick({
     stateDir, logDir,
     getClient: () => fakeClient(),
-    transport, getUserChannel,
+    transport,
     now: new Date('2026-04-29T07:30:00Z').getTime(),
   });
   const recPath = join(stateDir, 'active', readdirSync(join(stateDir, 'active'))[0]);
@@ -353,7 +348,7 @@ test('tick: failed sendEmail is queued under pendingDeliveries for next-tick ret
   await tick({
     stateDir, logDir,
     getClient: () => fakeClient(),
-    transport, getUserChannel,
+    transport,
     now: new Date('2026-04-29T07:30:31Z').getTime(),  // past 30s pre-anchor cadence
   });
   saved = JSON.parse(readFileSync(recPath, 'utf8'));
@@ -371,14 +366,12 @@ test('tick: persistent failure is dropped after MAX_DELIVERY_ATTEMPTS, pages ope
       if (msg.to === 'ops@example.com') { opAlerts.push(msg); return; }
       throw new Error('persistent');
     },
-    sendNtfy: async () => {},
   };
-  const getUserChannel = () => 'email';
 
   // 10 ticks, 30s+ apart so cadence allows new polls each time.
   let now = new Date('2026-04-29T07:30:00Z').getTime();
   for (let i = 0; i < 10; i++) {
-    await tick({ stateDir, logDir, getClient: () => fakeClient(), transport, getUserChannel, now, operatorEmail: 'ops@example.com' });
+    await tick({ stateDir, logDir, getClient: () => fakeClient(), transport, now, operatorEmail: 'ops@example.com' });
     now += 31_000;
   }
   const recPath = join(stateDir, 'active', readdirSync(join(stateDir, 'active'))[0]);

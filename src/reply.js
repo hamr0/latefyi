@@ -86,8 +86,7 @@ function reply({ subject, body, to, inReplyTo, references, msgid, replyTo, fromL
 
 // ---- §7: confirmation (happy path) ----
 
-// `channel` is accepted but unused while ntfy is deferred — keeps callers stable.
-export function confirmationReply({ resolved, sender, channel: _channel = 'email', incomingMsgid, ourMsgid, trainNum }) {
+export function confirmationReply({ resolved, sender, incomingMsgid, ourMsgid, trainNum }) {
   const line = resolved.line || resolved.trainNum;
   const fromName = resolved.from || '?';
   const toName = resolved.to || '?';
@@ -337,25 +336,6 @@ export function stopReply({ scope, target, count, trains, sender, incomingMsgid,
     subject: `Stopped tracking ${target}`,
     to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
     body: `OK, no more updates for ${target}.`,
-  });
-}
-
-// ---- §7: ntfy opt-in (sent once on first opt-in) ----
-
-export function ntfyOptInReply({ topic, sender, incomingMsgid, ourMsgid, baseUrl = 'https://ntfy.sh' }) {
-  const url = `${baseUrl}/${topic}`;
-  const deepLink = `ntfy://subscribe/${topic}`;
-  return reply({
-    fromLocal: 'config',
-    subject: `ntfy enabled for late.fyi`,
-    to: sender, inReplyTo: incomingMsgid, msgid: ourMsgid,
-    body:
-      `Install ntfy (App Store, Play Store, or F-Droid), then open this on your phone:\n\n` +
-      `   ${deepLink}\n\n` +
-      `Or open in any browser to subscribe manually:\n\n` +
-      `   ${url}\n\n` +
-      `From now on, every train you track will push here. Multiple trains in tandem all flow through this one topic — no extra setup, ever.\n\n` +
-      `Reply CHANNELS email to disable ntfy. Reply CHANNELS both to keep both channels active.`,
   });
 }
 

@@ -106,24 +106,17 @@ test('bare email (no From, no To) → mode MISSING', () => {
   assert.equal(r.to, null);
 });
 
-// ===== Channels override =====
+// ===== Channels: header is gone (ntfy removed) =====
 
-test('per-request Channels: header parses', () => {
+test('Channels: is no longer a header — not extracted, not in the track result', () => {
   const r = parse(email({
     to: 'ICE145@late.fyi',
     subject: 'From: A, To: B, Channels: ntfy',
   }));
   assert.equal(r.kind, 'track');
-  assert.equal(r.channels, 'ntfy');
-});
-
-test('per-request Channels: rejects invalid value', () => {
-  const r = parse(email({
-    to: 'ICE145@late.fyi',
-    subject: 'From: A, To: B, Channels: telegram',
-  }));
-  assert.equal(r.kind, 'error');
-  assert.equal(r.code, 'invalid_channels');
+  assert.equal('channels' in r, false);
+  assert.equal(r.from, 'A');
+  assert.equal(r.to, 'B');
 });
 
 // ===== Train number validation =====
@@ -267,17 +260,10 @@ test('reply body that mentions stop mid-sentence does not trigger STOP', () => {
 
 // ===== Reserved local-parts =====
 
-test('config@ + CHANNELS ntfy → config kind', () => {
+test('config@ is no longer a reserved local-part: never a config kind, never a track', () => {
   const r = parse(email({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }));
-  assert.equal(r.kind, 'config');
-  assert.equal(r.field, 'channels');
-  assert.equal(r.value, 'ntfy');
-});
-
-test('config@ without CHANNELS → error', () => {
-  const r = parse(email({ to: 'config@late.fyi', subject: 'hello' }));
   assert.equal(r.kind, 'error');
-  assert.equal(r.code, 'config_unrecognized');
+  assert.equal(r.code, 'invalid_trainnum');
 });
 
 test('help@ → help kind', () => {

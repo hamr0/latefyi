@@ -82,7 +82,6 @@ export function buildPendingRecord({ msgid, sender, parsed, resolved, receivedAt
       from: parsed.from,
       to: parsed.to,
       trip: parsed.trip || null,
-      channels: parsed.channels || null,
     },
     resolved: {
       endpoint: resolved.endpoint,

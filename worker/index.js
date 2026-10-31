@@ -17,7 +17,7 @@
 // "not a valid train number" replies for mail that was never train-related.
 const NON_TRACKING_LOCALPARTS = new Set([
   'feedback', 'postmaster', 'abuse', 'admin', 'hostmaster', 'webmaster',
-  'security', 'noreply', 'no-reply', 'mailer-daemon',
+  'security', 'noreply', 'no-reply', 'mailer-daemon', 'config',
 ]);
 
 function localPartOf(addr) {

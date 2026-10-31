@@ -16,7 +16,7 @@ import { schedule, readPending } from './schedule.js';
 import { parkDisambig, readDisambig, removeDisambig } from './disambig.js';
 import { resolveDisambiguation } from './stations.js';
 import {
-  getOrCreate, setChannel, incrementTrainCount, ntfyTopic, senderHash,
+  getOrCreate, incrementTrainCount, senderHash,
   checkRateLimit, recordRequest, checkActionRateLimit, recordAction, DEFAULT_LIMITS,
 } from './users.js';
 import { senderFailsDmarc } from './auth-results.js';
@@ -24,7 +24,7 @@ import {
   confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
   unauthorizedSenderReply, disposableSenderReply, stopReply, genericErrorReply,
-  rateLimitedReply, tooManyActiveReply, listReply, FOOTER,
+  rateLimitedReply, tooManyActiveReply, listReply,
 } from './reply.js';
 
 const DOMAIN = 'late.fyi';
@@ -89,7 +89,7 @@ function findRecordsForSender(stateDir, sender, predicate) {
 // Delete the record. Privacy claim: when a trip ends (arrival, STOP,
 // cancellation), nothing per-trip is retained — only the sender's
 // pseudonymous user file (state/users/<hash>.json) keeps a counter and
-// channel preference. Aggregate operator metrics derive from those.
+// counters. Aggregate operator metrics derive from those.
 function dropTerminalRecord(matchPath) {
   unlinkSync(matchPath);
 }
@@ -177,7 +177,7 @@ async function handleTrack({ email, parsed, stateDir, primaryClient, fallbackCli
   incrementTrainCount(email.from, stateDir);
 
   return confirmationReply({
-    resolved: r, sender: email.from, channel: userRecord.channel,
+    resolved: r, sender: email.from,
     incomingMsgid: email.msgid, ourMsgid, trainNum: parsed.trainNum,
   });
 }
@@ -271,32 +271,6 @@ function handleList({ email, stateDir }) {
   });
 }
 
-function handleConfig({ email, parsed, stateDir }) {
-  if (parsed.field === 'channels') {
-    // ntfy is paused — accept the request but force email-only and tell the
-    // user. Code path is intact for re-enable; just no user-facing surface.
-    if (parsed.value !== 'email') {
-      setChannel(email.from, 'email', stateDir);
-      return {
-        from: `latefyi <config@${DOMAIN}>`,
-        to: email.from,
-        subject: `ntfy delivery is paused`,
-        body: `Push notifications via ntfy are temporarily disabled while we work on a smoother setup. You'll keep getting train updates by email.\n\nNo action needed.`,
-        headers: { 'In-Reply-To': email.msgid, 'Message-ID': newMsgid() },
-      };
-    }
-    setChannel(email.from, 'email', stateDir);
-    return {
-      from: `latefyi <config@${DOMAIN}>`,
-      to: email.from,
-      subject: `Channel updated to email`,
-      body: `Your delivery channel is now: email.\n\n${FOOTER}`,
-      headers: { 'In-Reply-To': email.msgid, 'Message-ID': newMsgid() },
-    };
-  }
-  return null;
-}
-
 // ---- main entry ----
 
 // handleInbound returns either a reply email object (to send via transport),
@@ -331,9 +305,9 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
   }
 
   // Broad per-sender action limit: covers EVERY command (track/stop/list/
-  // config/reply), unlike the track-specific budget in handleTrack. Stops a
+  // reply), unlike the track-specific budget in handleTrack. Stops a
   // single sender from amplifying backscatter or forcing repeated state scans
-  // via config/list/stop spam. Over the cap → silent drop (a reply would
+  // via list/stop spam. Over the cap → silent drop (a reply would
   // defeat the anti-backscatter purpose). Runs after the auth gate so only
   // authenticated senders ever create a user record (bounds disk growth too).
   if (email.from) {
@@ -351,8 +325,6 @@ export async function handleInbound({ email, stateDir, primaryClient, fallbackCl
       return handleTrack({ email, parsed, stateDir, primaryClient, fallbackClient, aliases, limits, now });
     case 'stop':
       return handleStop({ email, parsed, stateDir });
-    case 'config':
-      return handleConfig({ email, parsed, stateDir });
     case 'list':
       return handleList({ email, stateDir });
     case 'help':
