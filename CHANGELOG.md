@@ -10,6 +10,15 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.18.4 — nodemailer 10 dependency bump (2026-10-31)
+
+PRD → 1.18.4. Dependency bump (PR #5); no behaviour change and no code change.
+
+### Changed
+
+- **`nodemailer` 8.0.7 → 10.1.4.** Direct production dependency (`package.json` now `^10.1.4`). Verified: `npm test` 303/303 pass on the new deps; `npm audit --omit=dev` reports 0 vulnerabilities; a real send through `createSmtpTransport` (`src/smtp-transport.js`) to a local SMTP sink succeeded on the plain non-TLS localhost:25 path production uses, with correct MAIL FROM, RCPT and Subject. nodemailer 10 requires Node >= 20; the VPS runs Node 22.22.2.
+- **Transitive `qs` 6.15.2 → 6.17.1** at the repo root, and 6.15.1 → 6.17.1 in `poc/` (the POC package, not runtime).
+
 ## 0.18.3 — docs accuracy pass: stale claims, deploy steps, file layout (2026-10-23)
 
 PRD → 1.18.3. Docs corrections plus comment/import cleanup; no behaviour change.
