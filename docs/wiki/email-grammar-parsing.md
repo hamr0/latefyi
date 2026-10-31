@@ -28,7 +28,7 @@ The local part of the address is the train number; headers choose the mode (docs
 - **Train number**: the local part, required; uppercase, alphanumeric, no whitespace (e.g. `RE19750`, `9876`, `ICE104`, `ES9114`, `TGV6201`) (docs/archive/latefyi-prd.md:112).
 - **Where headers go**: `From:`, `To:`, `Trip:` may be in the subject line (preferred) or the body's first non-empty line; the classic form is key-colon-value, comma-separated (docs/archive/latefyi-prd.md:113).
 - **Case-insensitive keys**: `From:`, `from:`, `FROM:`, `tO:` parse identically. Values are normalized for matching but preserved verbatim for replies (docs/archive/latefyi-prd.md:114).
-- **Forgiving parsing**: colons and commas are optional; the parser splits on keyword boundaries (`from` / `to` / `on` / `trip` / `channels`) (docs/archive/latefyi-prd.md:115). All of these work (docs/archive/latefyi-prd.md:116-119):
+- **Forgiving parsing**: colons and commas are optional; the parser splits on keyword boundaries (`from` / `to` / `on` / `trip`) (docs/archive/latefyi-prd.md:115). All of these work (docs/archive/latefyi-prd.md:116-119):
   - `From: Amsterdam, To: Berlin Ostbahnhof` (classic)
   - `from amsterdam to berlin ostbahnhof` (no colons, no commas)
   - `from amsterdam to paris nord on 2026-05-06` (all bare)

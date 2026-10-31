@@ -39,7 +39,7 @@ Why late.fyi is shaped the way it is: the numbered decisions log, the explicit N
 - Cron plus `wake.sh` for scheduling, matching the bare-suite pattern with no in-process scheduler complexity (docs/archive/latefyi-prd.md:1559).
 - Polling cadence varies by phase: T-30 to departure needs density; in-transit is sparser (docs/archive/latefyi-prd.md:1557).
 - Diff-based push, not poll-based, to avoid spam and debounce delay oscillation (docs/archive/latefyi-prd.md:1558).
-- Three lifetimes: per-user, per-train, per-change. This separates lifetime preference (channel, ntfy topic) from ephemeral tracking (one trip) from delivery events, and removes the "new ntfy topic per train?" question (docs/archive/latefyi-prd.md:1565).
+- Three lifetimes: per-user, per-train, per-change. This separates lifetime state (counters, rate limits) from ephemeral tracking (one trip) from delivery events (docs/archive/latefyi-prd.md:1565).
 - `state/users/<sender_hash>.json` holds per-user state: a clean schema boundary, trivial to inspect with `cat` (docs/archive/latefyi-prd.md:1568).
 - Originally: 30-day retention for `done/` and logs. Superseded: there is no `done/` (terminal records are deleted, zero retention); this entry stands only as history (docs/archive/latefyi-prd.md:1564).
 
@@ -47,18 +47,14 @@ Why late.fyi is shaped the way it is: the numbered decisions log, the explicit N
 
 - Cloudflare Email Worker for ingest rather than own SMTP: SMTP setup is a months-long deliverability project that Cloudflare handles free (docs/archive/latefyi-prd.md:1552).
 - Sender allowlist as the auth boundary: simpler and more robust than per-request signing, and supports multi-user without auth complexity (docs/archive/latefyi-prd.md:1555).
-- Multi-user within a single deployment (allowlist): operator, friends and family each get an independent channel preference and (if opted in) ntfy topic. Not SaaS: single deployment, no auth, no billing (docs/archive/latefyi-prd.md:1569).
+- Multi-user within a single deployment (allowlist): operator, friends and family each get independent state. Not SaaS: single deployment, no auth, no billing (docs/archive/latefyi-prd.md:1569).
 - Domain via Cloudflare Registrar is recommended, not required: at-cost and integrates with Email Routing (docs/archive/latefyi-prd.md:1562).
 
 ### Channels and replies
 
-- Email is the default channel and ntfy an opt-in upgrade (revised from the original "ntfy primary, email fallback"). Email works for everyone with zero install, and the system is shared with friends and family who should not need an app (docs/archive/latefyi-prd.md:1553).
-- Critical events override channel preference: cancellation safety beats user preference (docs/archive/latefyi-prd.md:1554).
-- ntfy topic is derived from `sha256(sender_email)[:16]`: stable, private, stateless, regenerable (docs/archive/latefyi-prd.md:1556).
-- One ntfy topic per user, all trains stream through it: stable subscription, no per-train setup, unlimited concurrent trains. ntfy does not merge POSTs, so each update is its own notification (docs/archive/latefyi-prd.md:1566).
-- ntfy opt-in via `CHANNELS ntfy` to `config@late.fyi`, with the QR sent once. The QR/URL is the only friction point and happens exactly once per user (docs/archive/latefyi-prd.md:1567).
+- Email is the only delivery channel; critical events (cancellation etc.) go by email like everything else. Email works for everyone with zero install, and the system is shared with friends and family who should not need an app (docs/archive/latefyi-prd.md:1553). ntfy was an opt-in upgrade, paused from v1.9.0 and removed in 0.19.0 (see [archived channels page](../archive/notification-channels-ntfy.md)).
 - Reply emails are threaded via `In-Reply-To`, so mail clients group updates per train (docs/archive/latefyi-prd.md:1563).
-- Standard footer on every outbound email (format reminder, STOP variants, Trip tag, case-insensitivity note). Reasons: passive teaching by repetition, every email self-contained, and one source of truth in `reply.js`. ntfy push bodies skip the footer to stay short (docs/archive/latefyi-prd.md:1574).
+- Standard footer on every outbound email (format reminder, STOP variants, Trip tag, case-insensitivity note). Reasons: passive teaching by repetition, every email self-contained, and one source of truth in `reply.js`. every outbound message is an email, so the footer is universal (docs/archive/latefyi-prd.md:1574).
 - No web UI and no dashboard; operator apps cover that need (docs/archive/latefyi-prd.md:1561).
 
 ## Out of scope (NO-GO list)
@@ -70,8 +66,8 @@ To prevent scope creep, the following are explicitly out of scope and should be 
 | Transactions | Booking, ticketing, refunds, seat reservation (docs/archive/latefyi-prd.md:1582) |
 | Planning | Journey planning, "how do I get from X to Y?" (docs/archive/latefyi-prd.md:1583) |
 | Product model | Multi-tenant SaaS, user accounts, billing, payment; hosted SaaS version (docs/archive/latefyi-prd.md:1584, 1591) |
-| Interfaces | Web UI, dashboard, admin console; mobile app (ntfy app is the mobile app); voice/chatbot interfaces (docs/archive/latefyi-prd.md:1585, 1592, 1597) |
-| Channels | Anything beyond ntfy + email: no Telegram, Discord, Signal, SMS (docs/archive/latefyi-prd.md:1586) |
+| Interfaces | Web UI, dashboard, admin console; mobile app; voice/chatbot interfaces (docs/archive/latefyi-prd.md:1585, 1592, 1597) |
+| Channels | Anything beyond email: no ntfy (removed in 0.19.0), Telegram, Discord, Signal, SMS (docs/archive/latefyi-prd.md:1586) |
 | Data | Operator-website scraping (HAFAS only) (docs/archive/latefyi-prd.md:1587) |
 | Intelligence | Delay prediction, ML, "smart" recommendations (docs/archive/latefyi-prd.md:1588) |
 | Stats | Aggregated stats, leaderboards, "trains I tracked this year" (docs/archive/latefyi-prd.md:1589) |
@@ -80,7 +76,7 @@ To prevent scope creep, the following are explicitly out of scope and should be 
 
 ## Implementation milestones
 
-Phases are ordered so each is independently demoable, and the system is fully usable end-to-end after Phase 4 (email covers the full default experience). ntfy is a Phase 5-6 enhancement (docs/archive/latefyi-prd.md:1704).
+Phases are ordered so each is independently demoable, and the system is fully usable end-to-end after Phase 4 (email covers the full default experience). ntfy was a Phase 6 enhancement, later removed in 0.19.0 (docs/archive/latefyi-prd.md:1704).
 
 | Phase | Scope | Goal |
 |---|---|---|
@@ -89,7 +85,7 @@ Phases are ordered so each is independently demoable, and the system is fully us
 | 3. Poller + diff (no delivery) | `poll.js`, `diff.js` against live `hafas-client`; pushes written only to `logs/push.jsonl` (docs/archive/latefyi-prd.md:1716-1718) | Verify cadence and diff logic on real trains before wiring delivery (docs/archive/latefyi-prd.md:1719) |
 | 4. Email channel + reply | `reply.js`, email side of `push.js`, SMTP config, confirmation/error replies, threaded updates (docs/archive/latefyi-prd.md:1721-1723) | Track a real train end-to-end via email only; the system is fully usable here (docs/archive/latefyi-prd.md:1724-1725) |
 | 5. Cloudflare Worker + DNS | Deploy Worker, configure Email Routing, allowlist enforcement at edge (docs/archive/latefyi-prd.md:1727-1728) | Real emails to `*@late.fyi` trigger real tracking in production (docs/archive/latefyi-prd.md:1729) |
-| 6. ntfy opt-in | ntfy side of `push.js`, `CHANNELS` handler in `users.js`, opt-in reply with QR, fallback-to-email on ntfy failures (docs/archive/latefyi-prd.md:1731-1734) | Push users can opt in; email users are unaffected (docs/archive/latefyi-prd.md:1735) |
+| 6. ntfy opt-in (removed in 0.19.0) | ntfy side of `push.js`, `CHANNELS` handler in `users.js`, opt-in reply with QR, fallback-to-email on ntfy failures (docs/archive/latefyi-prd.md:1731-1734) | Push users can opt in; email users are unaffected (docs/archive/latefyi-prd.md:1735) |
 | 7. Hardening | See below (docs/archive/latefyi-prd.md:1737-1747) | Runs unattended 30+ days, recovers from HAFAS outages, never loses a request, replies reach Gmail/Outlook/Apple, safe to broaden the allowlist (docs/archive/latefyi-prd.md:1749) |
 
 ### Phase 7 detail
@@ -103,4 +99,4 @@ Phases are ordered so each is independently demoable, and the system is fully us
 - Operations: log retention pruning (`logs/push.jsonl`, error logs), HAFAS-disagreement logging when ÖBB and PKP both succeed but disagree, edge-case error handling (docs/archive/latefyi-prd.md:1747).
 - 30-day unattended-operation soak test (docs/archive/latefyi-prd.md:1748).
 
-Email-default architecture means Phases 1-5 deliver complete value, and Phase 6 (ntfy) is purely additive (docs/archive/latefyi-prd.md:1751).
+Email-default architecture means Phases 1-5 deliver complete value, and Phase 6 (ntfy, since removed in 0.19.0) was purely additive (docs/archive/latefyi-prd.md:1751).

@@ -21,18 +21,17 @@ All times shown are **station-local** — the time you'd read off the platform c
 
 ## 1. Inbound (user → late.fyi)
 
-Routing key is the **local-part of the To: address**. Body and subject are parsed for additional headers (`From:`, `To:`, `On:`, `Trip:`, `Channels:`).
+Routing key is the **local-part of the To: address**. Body and subject are parsed for additional headers (`From:`, `To:`, `On:`, `Trip:`).
 
 | To address                  | Trigger                                              | Effect (parser kind)              |
 | --------------------------- | ---------------------------------------------------- | --------------------------------- |
 | `<TRAINNUM>@late.fyi`       | Any `[A-Z]{0,4}\d{2,5}` local-part (EUR9340, ICE145) | `track` — see headers below       |
 | `stop@late.fyi`             | `STOP <TRAIN>` / `STOP TRIP <name>` / `STOP ALL`     | `stop`                            |
 | `list@late.fyi`             | Any subject/body                                     | `list` — return active trains     |
-| `config@late.fyi`           | `CHANNELS email` / `CHANNELS ntfy` / `CHANNELS both` | `config`                          |
 | `help@late.fyi`             | Any subject/body                                     | `help`                            |
 | `feedback@late.fyi`         | Any subject/body                                     | Forwarded to operator; no auto-reply |
 | Reply to a prior outbound   | `In-Reply-To` header set                             | `reply` — answer disambiguation, etc. |
-| `noreply@`, `postmaster@`, `abuse@`, `admin@` | Reserved local-parts caught by Cloudflare worker | Dropped before ingest |
+| `noreply@`, `postmaster@`, `abuse@`, `admin@`, `config@` | Reserved local-parts caught by Cloudflare worker | Dropped before ingest |
 | Any local-part, sender on a known disposable domain (mailinator, 10minutemail, …) | Only when `BLOCK_DISPOSABLE=true` | `disposableSenderReply` — friendly bounce, no record created |
 
 ### Headers recognised in the subject (or first non-empty body line)
@@ -44,7 +43,6 @@ From: <station>      Departure station name (substring match against route)
 To: <station>        Arrival station / destination
 On: 2026-05-04       Travel date — ISO or named-month ("5 May 2026"); up to 90 days ahead
 Trip: <tag>          Group label; STOP TRIP <tag> tears the chain down
-Channels: email|ntfy|both
 ```
 
 ### Mode resolution
@@ -64,7 +62,6 @@ Channels: email|ntfy|both
 | `STOP EUR9340` → `stop@late.fyi`                 | "STOP EUR9340" | stop tracking EUR9340                       |
 | `STOP TRIP berlin` → `stop@late.fyi`             | "STOP TRIP berlin" | stop all trains tagged berlin            |
 | `STOP ALL` → `stop@late.fyi`                     | "STOP ALL" | stop everything                                    |
-| `CHANNELS ntfy` → `config@late.fyi`              | "CHANNELS ntfy" | switch to ntfy push delivery                  |
 | (any) → `list@late.fyi`                          | (any) | reply with currently active trains                       |
 | (any) → `help@late.fyi`                          | (any) | reply with help text                                     |
 
@@ -260,27 +257,6 @@ Cleared 2 active trains:
   - ICE 145 (Amsterdam → Berlin), dep Tuesday, 2026-05-05 08:00
 
 No more updates until you start fresh.
-```
-
-### ntfy opt-in
-
-**Trigger:** sender sent `CHANNELS ntfy` or `CHANNELS both` to `config@late.fyi`. Sent once per channel switch.
-
-**From:** `latefyi <config@late.fyi>`
-**Subject:** `ntfy enabled for late.fyi`
-
-```
-Install ntfy (App Store, Play Store, or F-Droid), then open this on your phone:
-
-   ntfy://subscribe/latefyi-abc123
-
-Or open in any browser to subscribe manually:
-
-   https://ntfy.sh/latefyi-abc123
-
-From now on, every train you track will push here. Multiple trains in tandem all flow through this one topic — no extra setup, ever.
-
-Reply CHANNELS email to disable ntfy. Reply CHANNELS both to keep both channels active.
 ```
 
 ### generic error (resolver fallback)

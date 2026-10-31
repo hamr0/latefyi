@@ -202,21 +202,15 @@ test('track happy path: resolves, schedules, returns confirmation', async () => 
   assert.equal(rec.confirmationMsgid, r.headers['Message-ID']);
   assert.equal(rec.resolved.tripId, 'TRIP_ICE145');
 
-  // User record created with default email channel
+  // User record created
   const userFiles = readdirSync(join(stateDir, 'users'));
   assert.equal(userFiles.length, 1);
   const user = JSON.parse(readFileSync(join(stateDir, 'users', userFiles[0]), 'utf8'));
-  assert.equal(user.channel, 'email');
   assert.equal(user.trains_tracked_count, 1);
 });
 
-test('track: confirmation reply is email-only while ntfy is paused', async () => {
+test('track: confirmation reply is email-only', async () => {
   const { stateDir } = setup();
-  // Even if user previously asked for ntfy, the system pins them to email.
-  await handleInbound({
-    email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }),
-    stateDir, primaryClient: fakeOebb(),
-  });
   const r = await handleInbound({
     email: baseEmail({ subject: 'From: Amsterdam Centraal, To: Berlin Ostbahnhof' }),
     stateDir, primaryClient: fakeOebb(),
@@ -256,28 +250,27 @@ test('track: station not on route → station-not-on-route reply', async () => {
   assert.match(r.body, /Amsterdam Centraal → Hannover Hbf → Berlin Ostbahnhof/);
 });
 
-// ===== Config =====
+// ===== config@ (removed with ntfy) =====
 
-test('config: CHANNELS ntfy → paused notice (ntfy is deferred)', async () => {
+test('config@ is no longer a command: no config reply, no tracking, no user-state change', async () => {
   const { stateDir } = setup();
   const r = await handleInbound({
     email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS ntfy' }),
     stateDir, primaryClient: fakeOebb(),
   });
-  assert.match(r.subject, /paused/i);
-  assert.doesNotMatch(r.body, /ntfy\.sh/);
-});
-
-test('config: CHANNELS email → simple confirmation', async () => {
-  const { stateDir } = setup();
-  const r = await handleInbound({
-    email: baseEmail({ to: 'config@late.fyi', subject: 'CHANNELS email' }),
-    stateDir, primaryClient: fakeOebb(),
-  });
-  assert.match(r.subject, /Channel updated to email/);
-  assert.doesNotMatch(r.body, /ntfy/i);
-  assert.match(r.from, /config@late\.fyi/);
-  assert.match(r.body, /late\.fyi/); // FOOTER present
+  // Handled like any non-train local-part: generic error, from help@.
+  assert.match(r.subject, /Couldn't track/);
+  assert.match(r.body, /invalid_trainnum/);
+  assert.doesNotMatch(r.from, /config@/);
+  assert.doesNotMatch(r.body, /ntfy|Channel updated|paused/i);
+  // Nothing scheduled, and no channel preference written.
+  assert.deepEqual(readdirSync(join(stateDir, 'pending')), []);
+  assert.deepEqual(readdirSync(join(stateDir, 'active')), []);
+  for (const f of readdirSync(join(stateDir, 'users'))) {
+    const u = JSON.parse(readFileSync(join(stateDir, 'users', f), 'utf8'));
+    assert.equal('channel' in u, false);
+    assert.equal(u.trains_tracked_count, 0);
+  }
 });
 
 // ===== STOP variants =====

@@ -1,5 +1,5 @@
 // Inbound sender authentication. The trust model gates every per-user action
-// (track, STOP, list, config) on the email's `From`, which is trivially
+// (track, STOP, list) on the email's `From`, which is trivially
 // spoofable on its own. The receiving MTA (Cloudflare Email Routing for
 // *@late.fyi) evaluates SPF/DKIM/DMARC and records the verdict in an
 // `Authentication-Results` header; we read it here so a spoofed `From` can be

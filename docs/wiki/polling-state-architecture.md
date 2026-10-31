@@ -61,7 +61,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 
 1. Cloudflare Email Worker (edge): receives email, validates sender, posts JSON to the Node service (docs/archive/latefyi-prd.md:791-791).
 2. Node service (VPS or home server): parser, resolver, scheduler, poller, push dispatcher (docs/archive/latefyi-prd.md:792-792).
-3. ntfy app on the phone, subscribed to the user's private topic (paused: ntfy is off via `NTFY_ENABLED`, all delivery is email) (docs/archive/latefyi-prd.md:793-793).
+3. Email (the user's mail client) is the only delivery channel; ntfy was removed in 0.19.0 (docs/archive/latefyi-prd.md:793-793).
 4. Cron (`wake.sh`) activating due requests every minute (docs/archive/latefyi-prd.md:794-794).
 5. File system: `pending/`, `active/` (plus `users/` and `pending-disambig/`) as the only state store; terminal records are deleted, not archived (docs/archive/latefyi-prd.md:795-795).
 
@@ -70,7 +70,7 @@ A request moves through these states (docs/archive/latefyi-prd.md:738-775):
 The tree as built (`git ls-files`); the PRD's plan (docs/archive/latefyi-prd.md:799-836) differed:
 
 - `src/` pipeline: `parse.js` (email to discriminated request), `resolve.js` (train lookup), `stations.js` (fuzzy station match), `disambig.js` (parked disambiguation state), `schedule.js` (writes `pending/`), `poll.js` (one poll cycle), `diff.js` (snapshot diff to events), `push.js` (dispatch), `reply.js` (reply templates), `time-fmt.js` (station-local times), `users.js` (per-user state).
-- `src/` daemons and edges: `server.js` (inbound orchestrator), `ingest-server.js` (HTTP `/ingest`), `poll-runner.js` (poll daemon), `smtp-transport.js` (nodemailer), `ntfy-transport.js` (paused), `auth-results.js` (`dmarc=fail` check).
+- `src/` daemons and edges: `server.js` (inbound orchestrator), `ingest-server.js` (HTTP `/ingest`), `poll-runner.js` (poll daemon), `smtp-transport.js` (nodemailer), `auth-results.js` (`dmarc=fail` check).
 - `config/`: `aliases.json` (station aliases), `disposable-domains.txt` (blocklist). Both tracked.
 - `bin/stats.js`: counts-only JSON for the pulselog weekly digest.
 - `scripts/`: `wake.sh`, `deploy.sh`, `vps.sh`, `install-units.sh`, `stats.sh`, `stats-email.sh`, `refresh-disposable-domains.sh`, `cron-refresh-disposable.sh`, `dump-email-samples.js`, plus two tracked exploratory scripts `poc-line-names.js` and `poc-multi-source.js`.
@@ -78,7 +78,7 @@ The tree as built (`git ls-files`); the PRD's plan (docs/archive/latefyi-prd.md:
 - `state/`: `users/`, `pending/`, `active/`, `pending-disambig/`. No `done/` or `errors/`: terminal records are deleted.
 - `logs/`: `push.jsonl` (senderHash only) and `errors.jsonl` (flightlog) are what the code writes; the PRD's `audit.jsonl` and `disagreement.log` are not implemented.
 
-The PRD's `channels.js`, `setup-ntfy.sh`, `test-email.sh` and `config.json`/`endpoints.json` were never built.
+The PRD's `channels.js` (removed with ntfy), `setup-ntfy.sh`, `test-email.sh` and `config.json`/`endpoints.json` were never built.
 
 Runtime dependencies in `package.json`: `hafas-client`, `nodemailer`, `flightlog`, `pulselog`.
 
@@ -92,10 +92,10 @@ Input is the raw Worker callback JSON `{from, to, subject, body, msgid, headers}
 2. If `In-Reply-To` matches a pending `disambiguationMessageId`, return `disambiguation_reply` with the stripped first non-empty body line as `answer` (see §7a).
 3. If body or subject begins with `STOP` (case-insensitive), parse `STOP`, `STOP <TRAINNUM>`, `STOP TRIP <name>` or `STOP ALL`.
 4. Train number: uppercased local-part validated against `/^[A-Z]{0,4}\d{2,5}$/`, else `ParseError("invalid_trainnum")`.
-5. Headers: subject plus first non-empty body line matched with `/(from|to|trip|channels):\s*([^,\n]+)/gi`; keys case-insensitive, values trimmed and kept verbatim.
+5. Headers: subject plus first non-empty body line matched with `/(from|to|trip|on):\s*([^,\n]+)/gi`; keys case-insensitive, values trimmed and kept verbatim.
 6. Mode: `from` present means B, only `to` means A, neither means `MISSING` (the §7 missing-context reply). It never auto-picks `from`/`to` from the route (decision §22-27).
 7. `trip` must match `/^[A-Za-z0-9_-]{1,32}$/`; invalid triggers a reply asking for a corrected tag; empty becomes null.
-8. Channels default to the user's stored preference (`state/users/<sender_hash>.json`) or `email`; a per-request `Channels:` header overrides for that train only.
+8. Delivery is always email. There is no `Channels:` header (removed in 0.19.0 along with ntfy).
 
 ### `resolve.js` (13.2)
 
@@ -134,15 +134,13 @@ A pure function `(prev: TrainState, curr: TrainState) → PushEvent[]`, where ea
 
 ### `push.js` (13.7)
 
-Input is `(channelPref, topic, email, pushEvent[])`. For each event: if `channelPref` includes `ntfy`, POST to the ntfy server and log; if it includes `email` or the event is critical, send email and log. After 3 consecutive ntfy failures for a request, promote to `both` for the rest of the trip and note it in the next email. Results are appended to `logs/push.jsonl` (docs/archive/latefyi-prd.md:1042-1049).
+Input is `(sender, trip context, pushEvent[], transport)`. Every event, critical or not, is sent by email via `transport.sendEmail` and logged; each result is `{channel: 'email', ok, error?}`. Failures feed the poll-runner's retry queue. (ntfy and the channel preference were removed in 0.19.0.) Results are appended to `logs/push.jsonl` (docs/archive/latefyi-prd.md:1042-1049).
 
 ### `users.js` (13.7a)
 
-Per-user state: channel preference, ntfy topic, opt-in tracking (docs/archive/latefyi-prd.md:1053-1053). Functions (docs/archive/latefyi-prd.md:1056-1059):
+Per-user state: counters and rate-limit windows (docs/archive/latefyi-prd.md:1053-1053; the channel preference, ntfy topic and opt-in tracking were removed in 0.19.0). Functions (docs/archive/latefyi-prd.md:1056-1059):
 
-- `getOrCreate(senderEmail)`: loads `state/users/<hash>.json`, creating defaults if absent (`channel: "email"`, derived but inactive `ntfy_topic`).
-- `setChannel(senderEmail, channel)`: returns `{wasFirstNtfyOptIn}`, which triggers the QR reply.
-- `getNtfyTopic(senderEmail)`: deterministic; needs no existing record.
+- `getOrCreate(senderEmail)`: loads `state/users/<hash>.json`, creating defaults if absent. Old records that still carry `channel` / `ntfy_*` fields are tolerated and ignored.
 - `incrementTrainCount(senderEmail)`: bumps `trains_tracked_count` and `last_seen_at`.
 
 All updates write to `<file>.tmp` then rename; no locking is needed at this scale (docs/archive/latefyi-prd.md:1061-1061).
@@ -164,7 +162,6 @@ The Cloudflare Email Worker silently drops mail from senders not in `ALLOWED_SEN
   - `parse.js`: 20+ fixture emails (happy path, missing headers, malformed train numbers, multiple `To:`, headers in body vs subject).
   - `stations.js`: alias table and fuzzy cases (typos, accents, ambiguity).
   - `diff.js`: pure-function tests with synthetic before/after `TrainState` pairs.
-  - `channels.js`: preference resolution across combinations.
 - **Integration tests, offline** (docs/archive/latefyi-prd.md:1342-1344): `resolve.js` with mocked `hafas-client` returning canned responses; `poll.js` with a mocked endpoint and clock advancement.
 - **Manual live smoke test** (docs/archive/latefyi-prd.md:1346-1351): send a test email from an allowlisted address for a train in the next hour; verify the confirmation reply; verify the push at T-30; compare pushes against the operator app over the journey; verify the terminal push on arrival.
 - **Load test**: not applicable at single-tenant scale, at most about 10 concurrent active requests (docs/archive/latefyi-prd.md:1353-1354).

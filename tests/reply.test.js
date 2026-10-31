@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   FOOTER, confirmationReply, missingContextReply, trainNotFoundReply,
   stationNotOnRouteReply, ambiguousStationReply, alreadyArrivedReply,
-  unauthorizedSenderReply, disposableSenderReply, stopReply, ntfyOptInReply, pushReply,
+  unauthorizedSenderReply, disposableSenderReply, stopReply, pushReply,
   genericErrorReply,
 } from '../src/reply.js';
 
@@ -54,7 +54,7 @@ test('In-Reply-To header is set when incomingMsgid provided', () => {
   assert.equal(r.headers['In-Reply-To'], '<incoming@late.fyi>');
 });
 
-// ===== confirmation: delivery blurb (ntfy deferred — email-only) =====
+// ===== confirmation: delivery blurb (email-only) =====
 
 test('confirmation: mentions email delivery starting T-30', () => {
   const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b' });
@@ -75,8 +75,8 @@ test('confirmation: with trip adds a second mailto for STOP TRIP (subject+body)'
   assert.match(r.body, /Stop the whole trip \(berlin-weekend\)/);
 });
 
-test('confirmation: no ntfy/CHANNELS mentions while ntfy is paused', () => {
-  const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b', channel: 'ntfy' });
+test('confirmation: no ntfy/CHANNELS mentions (ntfy removed)', () => {
+  const r = confirmationReply({ resolved: sampleResolved(), sender: 'a@b' });
   assert.doesNotMatch(r.body, /ntfy/i);
   assert.doesNotMatch(r.body, /CHANNELS/);
 });
@@ -287,30 +287,6 @@ test('stopReply all', () => {
   const r = stopReply({ scope: 'all', count: 5, sender: 'a@b' });
   assert.match(r.subject, /Stopped all tracking/);
   assert.match(r.body, /Cleared 5 active trains/);
-});
-
-// ===== ntfy opt-in =====
-
-test('ntfy opt-in includes topic URL + setup steps', () => {
-  const r = ntfyOptInReply({
-    topic: 'latefyi-abc123def456', sender: 'a@b',
-  });
-  assert.match(r.body, /https:\/\/ntfy\.sh\/latefyi-abc123def456/);
-  assert.match(r.body, /Install ntfy/);
-});
-
-test('ntfy opt-in includes ntfy:// deep link for one-tap mobile subscribe', () => {
-  const r = ntfyOptInReply({
-    topic: 'latefyi-abc123def456', sender: 'a@b',
-  });
-  assert.match(r.body, /ntfy:\/\/subscribe\/latefyi-abc123def456/);
-});
-
-test('ntfy opt-in respects custom baseUrl (self-hosted)', () => {
-  const r = ntfyOptInReply({
-    topic: 'latefyi-abc', sender: 'a@b', baseUrl: 'https://ntfy.example.com',
-  });
-  assert.match(r.body, /https:\/\/ntfy\.example\.com\/latefyi-abc/);
 });
 
 // ===== push reply (per-event update) =====

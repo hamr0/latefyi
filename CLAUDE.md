@@ -1,6 +1,6 @@
 # CLAUDE.md — late.fyi
 
-Email-driven European train tracker. User emails `<TRAINNUM>@late.fyi`, gets push/email updates only when something matters.
+Email-driven European train tracker. User emails `<TRAINNUM>@late.fyi`, gets email updates only when something matters.
 
 ## Run
 
@@ -9,7 +9,7 @@ Email-driven European train tracker. User emails `<TRAINNUM>@late.fyi`, gets pus
 
 ## Architecture (one path through the system)
 
-`*@late.fyi` → CF Email Worker (`worker/index.js`) → POST /ingest on VPS → `src/server.js handleInbound` → parse / resolve / schedule → `state/pending/<msgid>.json` → `scripts/wake.sh` cron → `state/active/` → `src/poll-runner.js` → diff → `src/push.js` → SMTP (postfix on VPS) or ntfy POST → terminal → `state/done/` (sender scrubbed).
+`*@late.fyi` → CF Email Worker (`worker/index.js`) → POST /ingest on VPS → `src/server.js handleInbound` → parse / resolve / schedule → `state/pending/<msgid>.json` → `scripts/wake.sh` cron → `state/active/` → `src/poll-runner.js` → diff → `src/push.js` → SMTP (postfix on VPS) → terminal → `state/done/` (sender scrubbed).
 
 ## Two Workers, often confused
 
@@ -36,7 +36,7 @@ VPS at `155.94.144.191`. `opendkim` signs `noreply@late.fyi` with selector `late
 
 ## Reserved email local-parts
 
-`worker/index.js` `NON_TRACKING_LOCALPARTS` (`feedback`, `postmaster`, `abuse`, `admin`, ...) drops before any processing. CF Email Routing custom rules are the primary delivery; this is defense in depth so a missing rule doesn't bounce "not a valid train number" to a real human.
+`worker/index.js` `NON_TRACKING_LOCALPARTS` (`feedback`, `postmaster`, `abuse`, `admin`, `config` (retired command), ...) drops before any processing. CF Email Routing custom rules are the primary delivery; this is defense in depth so a missing rule doesn't bounce "not a valid train number" to a real human.
 
 ## Operator secrets at `pass latefyi/`
 
@@ -69,9 +69,7 @@ Two zero-dep sibling libs, wired per `hamr0/observability-playbook.md`.
 
 ## Phase status
 
-Phases 1–7 are shipped and live. Allowlist is **open** to anyone. Outstanding: 30-day soak, ntfy fail-streak → email fallback promotion.
-
-**ntfy is fully paused** via `NTFY_ENABLED` (poll-runner; default off). While off, `dispatch` strips ntfy from *every* result — including the critical-event override that used to publish cancellations to the public, email-derivable ntfy topic regardless of user preference. To re-enable: set `NTFY_ENABLED=true` and harden the topic first (it's `latefyi-sha256(email)[:16]` — derivable by anyone who knows the address; mix in a per-user secret before un-pausing).
+Phases 1–7 are shipped and live. Allowlist is **open** to anyone. Outstanding: 30-day soak.
 
 ## Reply-To threading
 

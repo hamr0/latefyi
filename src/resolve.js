@@ -207,7 +207,6 @@ export async function resolve({ parsed, primaryClient, fallbackClient, aliases =
     from: fromName,
     to: toName,
     trip: parsed.trip || null,
-    channels: parsed.channels || null,
     route: trip.routeStopNames,
     schedule: {
       scheduledDeparture: fromStop?.plannedDeparture || null,

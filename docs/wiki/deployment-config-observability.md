@@ -40,7 +40,7 @@ No paid Cloudflare plan is required; Workers free tier and Email Routing free ti
 
 ### `config/config.json`
 
-Reference shape from the original PRD (docs/archive/latefyi-prd.md:1226-1272). The running system does not read a `config/config.json`: settings come from `/etc/latefyi.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `ALLOWED_SENDERS` (empty = open), `NTFY_ENABLED` (default off, ntfy paused), `OPERATOR_EMAIL`, ...), and `config/` holds only `aliases.json` and `disposable-domains.txt`. Outbound mail is the VPS's own postfix + opendkim, not a relay, and ntfy is paused; read the `smtp`, `ntfy` and `log_retention_days` keys below as historical:
+Reference shape from the original PRD (docs/archive/latefyi-prd.md:1226-1272). The running system does not read a `config/config.json`: settings come from `/etc/latefyi.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `ALLOWED_SENDERS` (empty = open), `OPERATOR_EMAIL`, ...), and `config/` holds only `aliases.json` and `disposable-domains.txt`. Outbound mail is the VPS's own postfix + opendkim, not a relay, and ntfy was removed in 0.19.0 (the `NTFY_*` vars are gone); read the `smtp`, `ntfy` and `log_retention_days` keys below as historical:
 
 ```json
 {

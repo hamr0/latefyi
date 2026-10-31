@@ -5,6 +5,8 @@ sources:
   - docs/archive/latefyi-prd.md
 ---
 
+Archived 2026-10-31: ntfy was removed in 0.19.0; kept as history.
+
 # Notification channels and ntfy
 
 Delivery channels: email as default, the paused ntfy opt-in, channel selection and fallback, ntfy setup.

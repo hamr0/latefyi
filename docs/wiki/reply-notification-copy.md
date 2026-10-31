@@ -12,7 +12,7 @@ Wording and behavior of every reply and push: footer, STOP variants, error repli
 ## Reply principles
 
 - Replies go to the original sender; all are short, actionable, no marketing, no signature beyond `— late.fyi` (docs/archive/latefyi-prd.md:262-262).
-- The footer is email-only; ntfy push bodies stay short and skip it (docs/archive/latefyi-prd.md:266-266).
+- Every outbound message is an email and carries the footer (ntfy push bodies, which skipped it, were removed in 0.19.0).
 - In templates below, `[FOOTER]` is shorthand for the standard footer, appended from a single string constant in `reply.js` (docs/archive/latefyi-prd.md:275-275).
 
 ### Standard footer (every email reply)
@@ -32,7 +32,6 @@ Optional: Trip: <name>   ·   Stop via mailto: links in each email (or Subject: 
 `From:` is meaningful, with per-template routable local-parts (docs/archive/latefyi-prd.md:326-330):
 - confirmations and per-train updates: `latefyi <<TRAINNUM>@late.fyi>`
 - stop confirmations: `latefyi <stop@late.fyi>`
-- config replies: `latefyi <config@late.fyi>`
 - error / help / rate-limit / unauthorized: `latefyi <help@late.fyi>`
 
 The display name `latefyi` keeps the inbox sender clean. `noreply@` is not used as From: because clients that ignore Reply-To (Gmail, others) reply to From: directly, and the Cloudflare worker drops `noreply@` via `NON_TRACKING_LOCALPARTS`. Routable locals make Reply-STOP work as a silent fallback on top of the canonical mailto path (docs/archive/latefyi-prd.md:332-332).
@@ -52,7 +51,7 @@ Stops are triggered by a fresh email to `stop@late.fyi` (or any `<TRAINNUM>@late
 
 ## Confirmation replies
 
-### Happy path (email; ntfy paused)
+### Happy path (email)
 
 ```
 From: latefyi <RE19750@late.fyi>
@@ -105,14 +104,6 @@ Conditional, never always-on (docs/archive/latefyi-prd.md:336-339):
 - ` — YYYY-MM-DD` suffix, at the end, is rendered iff the train date is not today or tomorrow. ISO format is unambiguous across locales.
 - The same convention applies to per-event `pushReply` subjects, e.g. `ICE1255 +5min [austria] — 2026-05-06`.
 
-### User opted in to ntfy
-
-Same subject shape (`Tracking RE19750 — Amiens → Lille Flanders`) and body, but replaces the update line with `Push starts T-30 at 13:32 via ntfy.` and `Reply CHANNELS email to switch back.`, then `[FOOTER]` (docs/archive/latefyi-prd.md:343-352).
-
-### ntfy opt-in reply (sent once, on `CHANNELS ntfy` or `both`)
-
-Subject `ntfy enabled for late.fyi`. Body gives the topic URL (`https://ntfy.sh/latefyi-a3f9c2e1b4d8e7f2`), a three-step one-time setup (install ntfy from App Store, Play Store or F-Droid; open the app and tap +; scan the QR or paste the URL), and a note that every tracked train pushes to this one topic with no extra subscriptions. It ends with `Reply CHANNELS email to disable ntfy. Reply CHANNELS both to keep both channels active.` and `[FOOTER]` (docs/archive/latefyi-prd.md:356-376).
-
 ## Error and prompt replies
 
 All end with `[FOOTER]`.
@@ -124,7 +115,7 @@ All end with `[FOOTER]`.
 | Station not on route | `Brussels not on RE19750's route` | Lists the route (`Amiens → Arras → Douai → Lille Flanders`), says "Brussels" isn't a stop, suggests the closest match, and asks for a corrected station (docs/archive/latefyi-prd.md:413-423) |
 | Ambiguous station | `Which Lille for RE19750?` | Numbered options (1. Lille Flanders, 2. Lille Europe); "Reply with just the number (1 or 2), or the full name." Round-trip in §7a (docs/archive/latefyi-prd.md:427-439) |
 | Train already passed | `RE19750 already arrived` | Arrived at Lille Flanders at 14:32 today, nothing left to track; if for tomorrow's train, resend after midnight since train numbers are per-day (docs/archive/latefyi-prd.md:443-452) |
-| Unauthorized sender | `Sender not allowlisted` | "Email from <sender> isn't authorized for this latefyi instance. Add to config.json `allowed_senders` and redeploy." In single-tenant deployment this prevents the world from racking up your ntfy quota (docs/archive/latefyi-prd.md:456-465) |
+| Unauthorized sender | `Sender not allowlisted` | "Email from <sender> isn't authorized for this latefyi instance. Add to config.json `allowed_senders` and redeploy." In single-tenant deployment this keeps the world from using your outbound mail (docs/archive/latefyi-prd.md:456-465) |
 
 ## STOP confirmations
 
@@ -172,7 +163,7 @@ What gets pushed falls into exactly four windows (docs/archive/latefyi-prd.md:65
 - Terminal events (`terminating_short`, `arrived`) drop the route tail in Mode A to avoid the tautological `<verb> X, at X` reading.
 - The push subject's date suffix anchors on arrival for Mode A so it tracks the confirmation.
 
-**Critical-event override (§6).** Cancellation, full route disruption, terminating short and replacement bus are always sent via every available channel regardless of stored preference (docs/archive/latefyi-prd.md:684-684).
+**Critical-event override (§6).** Cancellation, full route disruption, terminating short and replacement bus are always sent (by email, the only channel) (docs/archive/latefyi-prd.md:684-684).
 
 **Suppression by default.** Silence is the norm; the vast majority of polls produce no push (docs/archive/latefyi-prd.md:686-686).
 

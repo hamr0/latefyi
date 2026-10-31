@@ -93,7 +93,6 @@ The premise "user emails a number, we track it" does not map to bus operations u
 Not in v1.0 but worth revisiting if felt pain emerges (docs/archive/latefyi-prd.md:1603):
 
 - `latefyictl`: a CLI to inspect `state/`, manually trigger pushes, manage the allowlist; probably useful by v0.3 (docs/archive/latefyi-prd.md:1605).
-- Self-hosted ntfy as default, if usage grows (docs/archive/latefyi-prd.md:1606).
 - Per-user preference persistence in `state/users/<email>.json` rather than inferred from `config.json` (docs/archive/latefyi-prd.md:1607).
 - Webhook notification (e.g. Home Assistant), only if requested (docs/archive/latefyi-prd.md:1608).
 - iCal feed of currently-tracked trains, only if requested (docs/archive/latefyi-prd.md:1609).
