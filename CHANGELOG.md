@@ -10,6 +10,31 @@ This project tracks two streams in lockstep:
 
 ## [Unreleased]
 
+## 0.19.0 — remove ntfy; email-only delivery; CI gate (2026-10-31)
+
+PRD → 1.19.0. ntfy removed entirely; email is the only delivery channel. Adds a CI gate.
+
+### Removed
+
+- **ntfy, entirely.** Deleted `src/ntfy-transport.js` and its tests. `push.js` `dispatch` is email-only: no channel preference, no ntfy payload, no fail-streak. `poll-runner` drops `ntfyEnabled` / `getUserChannel` and the `NTFY_ENABLED` / `NTFY_BASE_URL` wiring. The opt-in reply flow is gone.
+- **`config@` + the `CHANNELS` command retired.** `parse` / `server` no longer handle it. The worker now lists `config` in `NON_TRACKING_LOCALPARTS`, so stray `config@` mail is dropped silently once the Email Worker is redeployed; until then the server replies with a generic error.
+- **Per-request `Channels:` header dropped** (`parse` / `resolve` / `schedule`). Accepted regression: a same-line `To: X Channels: ntfy` now misparses and fails loudly rather than being tolerated.
+
+### Changed
+
+- **`users.js` no longer writes `channel` / `ntfy_topic` / `ntfy_opt_in_sent_at`.** Existing records carrying them still load.
+- **Privacy gain:** the public, email-derivable ntfy topic (`latefyi-sha256(email)[:16]`) no longer exists in the codebase.
+- **Tests 303 → 278.** 30 ntfy-only tests removed, 5 added (critical event and every event type delivered by email only; `config@` inert; old-record tolerance; parse), each shown red against the old source.
+- **Docs.** `CLAUDE.md`, PRD, email-formats and wiki now describe email-only delivery; the ntfy wiki page moved to `docs/archive/`.
+
+### Added
+
+- **CI gate** `.github/workflows/ci.yml`: push/PR runs `npm ci` → `npm test` on Node 22. `package.json` `engines` pins `node >=22` to match the VPS.
+
+### Operator follow-up
+
+- Redeploy the `latefyi-ingest` Email Worker via the Cloudflare API (`PUT /accounts/.../scripts/latefyi-ingest`) so the `config` local-part drop takes effect.
+
 ## 0.18.4 — nodemailer 10 dependency bump (2026-10-31)
 
 PRD → 1.18.4. Dependency bump (PR #5); no behaviour change and no code change.
